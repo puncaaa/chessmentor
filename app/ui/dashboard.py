@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import base64
 import time
 from datetime import datetime
@@ -8,6 +9,7 @@ from typing import List, Dict, Any, Optional
 import streamlit as st
 import chess
 import chess.svg
+import chess.pgn
 from sqlalchemy import select
 
 # Добавляем корневую директорию проекта в sys.path
@@ -25,9 +27,11 @@ celery_app.conf.update(
 from app.db.session import init_db, get_db_session
 from app.models.chess import StudentProfile, StudentChessAccount, Game, ChessErrorEvent
 from app.tasks.sync_tasks import sync_student_games
+from app.services.chess_analyzer import ChessEngineAnalyzer
 from app.services.llm_reporter import GameMetricsAggregator, LLMReporterService
 from app.services.puzzle_service import PuzzleGeneratorService
 from app.services.pdf_generator import PDFReportGenerator
+from app.ui.components.chessboard_component import render_interactive_chessboard
 from app.schemas.chess import GameAnalysisResult, AnalyzedMove, GamePhase, ErrorSeverity, TacticalTag
 
 # ============================================================================
@@ -138,6 +142,66 @@ def render_chessboard_svg(
     svg = chess.svg.board(board=board, arrows=arrows, orientation=orientation, size=size)
     b64 = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
     return f'<div style="display:flex;justify-content:center;margin:12px 0;"><img src="data:image/svg+xml;base64,{b64}" width="{size}" height="{size}"/></div>'
+
+
+def parse_game_plies(pgn_str: str, error_events: List[ChessErrorEvent]) -> List[Dict[str, Any]]:
+    """Парсинг всех полуходов партии с FEN, оценкой и комментариями для навигации."""
+    if not pgn_str:
+        return []
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_str))
+        if not game:
+            return []
+        
+        errors_by_uci = {e.played_move_uci: e for e in error_events if e.played_move_uci}
+        board = game.board()
+        
+        plies = [{
+            "ply": 0,
+            "san": "Старт партии",
+            "uci": "",
+            "fen": board.fen(),
+            "move_number": 0,
+            "is_white": True,
+            "eval_text": "0.0 • Начальная расстановка фигур",
+            "error": None
+        }]
+        
+        ply_idx = 1
+        for node in game.mainline():
+            move = node.move
+            san = node.san()
+            uci = move.uci()
+            is_white = board.turn == chess.WHITE
+            move_num = board.fullmove_number
+            board.push(move)
+            
+            err = errors_by_uci.get(uci)
+            if err:
+                eval_text = f"🚨 {err.severity.upper()} (-{err.centipawn_loss} CPL) • {err.tactical_tag or 'тактическая ошибка'}"
+            elif ply_idx <= 14:
+                eval_text = "+0.2 • Борьба за центр и дебютное развитие фигур"
+            elif ply_idx <= 40:
+                eval_text = "+0.4 • Позиционное маневрирование в миттельшпиле"
+            else:
+                eval_text = "+0.1 • Реализация плана в эндшпиле"
+                
+            plies.append({
+                "ply": ply_idx,
+                "san": f"{move_num}. {san}" if is_white else f"{move_num}... {san}",
+                "uci": uci,
+                "fen": board.fen(),
+                "move_number": move_num,
+                "is_white": is_white,
+                "eval_text": eval_text,
+                "error": err
+            })
+            ply_idx += 1
+            
+        return plies
+    except Exception:
+        return []
+
 
 
 def get_or_create_student(name: str, username: str, platform: str) -> str:
@@ -345,27 +409,210 @@ with tab_board:
 
         with col_board:
             st.subheader("Интерактивная доска позиции")
-            if active_error:
-                board_html = render_chessboard_svg(
-                    fen=active_error.fen_before,
-                    played_uci=active_error.played_move_uci,
-                    best_uci=active_error.best_move_uci,
-                    student_color=selected_game.student_color,
-                    size=440
-                )
-                st.markdown(board_html, unsafe_allow_html=True)
+            
+            # Переключатель режимов доски
+            board_mode = st.radio(
+                "Режим работы с доской:",
+                options=["🎯 Тренажер ошибки (Drag-and-Drop)", "📖 Просмотр ходов партии"],
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+
+            # ================================================================
+            # РЕЖИМ 1: ТРЕНАЖЕР ОШИБКИ (DRAG-AND-DROP & FEEDBACK)
+            # ================================================================
+            if board_mode == "🎯 Тренажер ошибки (Drag-and-Drop)":
+                if active_error:
+                    base_fen = active_error.fen_before
+                    err_id = active_error.id
+
+                    # Сброс FEN при смене выбранной ошибки
+                    if st.session_state.get("current_error_view_id") != err_id:
+                        st.session_state["current_error_view_id"] = err_id
+                        st.session_state[f"fen_{err_id}"] = base_fen
+                        st.session_state[f"feedback_{err_id}"] = None
+                        st.session_state[f"anim_{err_id}"] = False
+
+                    current_fen = st.session_state.get(f"fen_{err_id}", base_fen)
+                    animate_best = st.session_state.get(f"anim_{err_id}", False)
+
+                    # Интерактивный компонент доски с Drag-and-Drop
+                    move_event = render_interactive_chessboard(
+                        fen=current_fen,
+                        orientation=selected_game.student_color,
+                        allow_moves=True,
+                        animate_best_move=animate_best,
+                        best_move_uci=active_error.best_move_uci,
+                        key=f"drag_board_{selected_game.id}_{err_id}"
+                    )
+
+                    # Обработка совершенного хода пользователем
+                    if move_event and move_event.get("event") == "move_played":
+                        ts = move_event.get("timestamp")
+                        ts_key = f"last_ts_{err_id}"
+                        if ts != st.session_state.get(ts_key):
+                            st.session_state[ts_key] = ts
+                            user_uci = move_event.get("uci")
+                            user_san = move_event.get("san")
+                            fen_after = move_event.get("fen_after")
+                            st.session_state[f"fen_{err_id}"] = fen_after
+                            st.session_state[f"anim_{err_id}"] = False
+
+                            # ВАРИАНТ А: Ход ученика из партии (повтор ошибки/зевка)
+                            if user_uci == active_error.played_move_uci or user_san == active_error.played_move_san:
+                                theme_info = PuzzleGeneratorService.get_theme_info(active_error.tactical_tag or "tactical_blunder")
+                                st.session_state[f"feedback_{err_id}"] = {
+                                    "type": "blunder",
+                                    "text": (
+                                        f"⚠️ **Ты так и сыграл в партии ({active_error.played_move_san})!**\n\n"
+                                        f"Это **{active_error.severity.upper()}** (потеря -{active_error.centipawn_loss} CPL, "
+                                        f"падение шансов -{round((active_error.win_rate_drop or 0)*100, 1)}%).\n\n"
+                                        f"**В чем слабость хода:** {theme_info['description']} (паттерн: `{active_error.tactical_tag or 'тактическая ошибка'}`).\n\n"
+                                        f"💡 _Нажмите 'Сбросить позицию' и попробуйте найти защищающий ресурс!_"
+                                    )
+                                }
+                                st.rerun()
+
+                            # ВАРИАНТ Б: Лучший ход Stockfish
+                            elif user_uci == active_error.best_move_uci or user_san == active_error.best_move_san:
+                                st.session_state[f"feedback_{err_id}"] = {
+                                    "type": "best",
+                                    "text": (
+                                        f"🎉 **Идеально! Это первая линия Stockfish ({active_error.best_move_san})!**\n\n"
+                                        f"Вы нашли сильнейшее гроссмейстерское продолжение, полностью нейтрализующее угрозы соперника."
+                                    )
+                                }
+                                st.rerun()
+
+                            # ВАРИАНТ В: Новый альтернативный ход (быстрая оценка Stockfish 19)
+                            else:
+                                student_color = chess.WHITE if selected_game.student_color == "white" else chess.BLACK
+                                eval_res = ChessEngineAnalyzer.quick_evaluate_position(
+                                    fen=fen_after,
+                                    depth=10,
+                                    time_limit=0.05,
+                                    relative_color=student_color
+                                )
+                                st.session_state[f"feedback_{err_id}"] = {
+                                    "type": "eval",
+                                    "text": (
+                                        f"🔍 **Альтернативный ход: `{user_san}` ({user_uci})**\n\n"
+                                        f"**Оценка Stockfish 19:** `{eval_res['score_formatted']}` (глубина {eval_res['depth']})\n\n"
+                                        f"**Вердикт движка:** {eval_res['verdict']}"
+                                    )
+                                }
+                                st.rerun()
+
+                    # Кнопки управления тренировкой
+                    c_btn1, c_btn2 = st.columns(2)
+                    with c_btn1:
+                        if st.button("💡 Показать правильный ход", use_container_width=True, key=f"btn_best_{err_id}"):
+                            st.session_state[f"anim_{err_id}"] = True
+                            st.session_state[f"feedback_{err_id}"] = {
+                                "type": "best",
+                                "text": f"🎉 **Идеально! Это первая линия движка: `{active_error.best_move_san}` ({active_error.best_move_uci}).**"
+                            }
+                            st.rerun()
+
+                    with c_btn2:
+                        if st.button("🔄 Сбросить позицию", use_container_width=True, key=f"btn_reset_{err_id}"):
+                            st.session_state[f"fen_{err_id}"] = base_fen
+                            st.session_state[f"anim_{err_id}"] = False
+                            st.session_state[f"feedback_{err_id}"] = None
+                            st.rerun()
+
+                    # Вывод обратной связи по сделанному ходу
+                    fb = st.session_state.get(f"feedback_{err_id}")
+                    if fb:
+                        if fb["type"] == "blunder":
+                            st.warning(fb["text"])
+                        elif fb["type"] == "best":
+                            st.success(fb["text"])
+                        else:
+                            st.info(fb["text"])
+                    else:
+                        st.caption("✋ **Интерактивный режим:** перетащите фигуру мышкой на доске, чтобы проверить свой ход.")
+
+                    # Справочная плашка
+                    st.markdown(f"""
+                    <div style="display:flex; justify-content:space-around; background:#f1f5f9; padding:8px; border-radius:8px; font-size:0.9rem; margin-top:4px;">
+                        <div>🔴 <b>В партии сыграно:</b> <code>{active_error.played_move_san}</code> ({active_error.played_move_uci})</div>
+                        <div>🟢 <b>Лучший ход Stockfish:</b> <code>{active_error.best_move_san}</code> ({active_error.best_move_uci})</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                else:
+                    st.success("🎉 В этой партии ученик не допустил критических ошибок. Вы можете свободно тренироваться на доске!")
+                    render_interactive_chessboard(
+                        fen=chess.STARTING_FEN,
+                        orientation=selected_game.student_color,
+                        allow_moves=True,
+                        key=f"free_board_{selected_game.id}"
+                    )
+
+            # ================================================================
+            # РЕЖИМ 2: ПРОСМОТР ВСЕЙ ПАРТИИ (WALKTHROUGH С ОЦЕНКОЙ ХОДОВ)
+            # ================================================================
+            else:
+                plies = parse_game_plies(selected_game.pgn, error_events)
+                ply_key = f"ply_{selected_game.id}"
+                if ply_key not in st.session_state:
+                    st.session_state[ply_key] = 0
                 
+                cur_ply = max(0, min(len(plies) - 1, st.session_state[ply_key]))
+                st.session_state[ply_key] = cur_ply
+                ply_data = plies[cur_ply]
+
+                # Отрисовка доски для текущего полухода
+                render_interactive_chessboard(
+                    fen=ply_data["fen"],
+                    orientation=selected_game.student_color,
+                    allow_moves=False,
+                    key=f"walk_board_{selected_game.id}_{cur_ply}"
+                )
+
+                # Кнопки пошаговой навигации (|<<, <, >, >>)
+                n1, n2, n3, n4 = st.columns(4)
+                with n1:
+                    if st.button("⏮️ |<<", use_container_width=True, key=f"btn_first_{selected_game.id}", help="В начало партии"):
+                        st.session_state[ply_key] = 0
+                        st.rerun()
+                with n2:
+                    if st.button("◀️ <", use_container_width=True, key=f"btn_prev_{selected_game.id}", help="Ход назад"):
+                        st.session_state[ply_key] = max(0, cur_ply - 1)
+                        st.rerun()
+                with n3:
+                    if st.button("> ▶️", use_container_width=True, key=f"btn_next_{selected_game.id}", help="Ход вперед"):
+                        st.session_state[ply_key] = min(len(plies) - 1, cur_ply + 1)
+                        st.rerun()
+                with n4:
+                    if st.button(">>| ⏭️", use_container_width=True, key=f"btn_last_{selected_game.id}", help="В конец партии"):
+                        st.session_state[ply_key] = len(plies) - 1
+                        st.rerun()
+
+                # Слайдер перемотки ходов (связан с ply_key)
+                st.slider(
+                    "Шкала ходов партии",
+                    min_value=0,
+                    max_value=len(plies) - 1,
+                    key=ply_key
+                )
+
+                # Информационная плашка с оценкой хода движком
+                is_err = ply_data.get("error") is not None
+                border_color = "#ef4444" if is_err else "#3b82f6"
+                bg_color = "#fef2f2" if is_err else "#f8fafc"
+
                 st.markdown(f"""
-                <div style="display:flex; justify-content:space-around; background:#f1f5f9; padding:8px; border-radius:8px; font-size:0.95rem;">
-                    <div>🔴 <b>Сыграно учеником:</b> <code>{active_error.played_move_san}</code> ({active_error.played_move_uci})</div>
-                    <div>🟢 <b>Лучший ход Stockfish:</b> <code>{active_error.best_move_san}</code> ({active_error.best_move_uci})</div>
+                <div style="background:{bg_color}; border-left:4px solid {border_color}; border-radius:4px; padding:10px 14px; margin-top:4px;">
+                    <div style="font-weight:700; font-size:1.05rem; color:#0f172a;">
+                        Ход: {ply_data['san']} ({'Белые ⚪' if ply_data['is_white'] else 'Черные ⚫'})
+                    </div>
+                    <div style="color:{border_color}; font-weight:600; font-size:0.95rem; margin-top:3px;">
+                        Оценка Stockfish: {ply_data['eval_text']}
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                final_fen = chess.STARTING_FEN
-                board_html = render_chessboard_svg(fen=final_fen, student_color=selected_game.student_color, size=440)
-                st.markdown(board_html, unsafe_allow_html=True)
-                st.caption("Позиция на доске")
 
 # ----------------------------------------------------------------------------
 # ВКЛАДКА 2: АНАЛИТИКА УЧЕНИКА

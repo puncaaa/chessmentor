@@ -308,3 +308,63 @@ class ChessEngineAnalyzer:
             errors=errors,
             moves_tree=moves_tree,
         )
+
+    @classmethod
+    def quick_evaluate_position(
+        cls,
+        fen: str,
+        stockfish_path: str = "/opt/homebrew/bin/stockfish",
+        depth: int = 10,
+        time_limit: float = 0.05,
+        relative_color: chess.Color = chess.WHITE,
+    ) -> dict:
+        """
+        Быстрая оценка произвольной позиции через Stockfish (0.05 сек, глубина 10).
+        Используется для мгновенной обратной связи при перетаскивании фигур в UI.
+        """
+        board = chess.Board(fen)
+        try:
+            with chess.engine.SimpleEngine.popen_uci(stockfish_path) as engine:
+                info = engine.analyse(board, chess.engine.Limit(time=time_limit, depth=depth))
+                score_obj = info.get("score")
+                if not score_obj:
+                    return {"score_formatted": "0.0", "verdict": "Равная позиция"}
+
+                pov_score = score_obj.white() if relative_color == chess.WHITE else score_obj.black()
+                if pov_score.is_mate():
+                    moves = pov_score.mate()
+                    if moves > 0:
+                        verdict = f"Форсированный мат в {moves} ход(а)!"
+                        formatted = f"+M{moves}"
+                    else:
+                        verdict = f"Зевок мата в {-moves} ход(а)!"
+                        formatted = f"-M{-moves}"
+                    pawns = None
+                else:
+                    cp = pov_score.score() or 0
+                    pawns = cp / 100.0
+                    formatted = f"{pawns:+.2f}"
+                    if pawns >= 1.5:
+                        verdict = f"Отличный ход! Большой перевес ({formatted})"
+                    elif pawns >= 0.3:
+                        verdict = f"Хороший активный ход ({formatted})"
+                    elif pawns >= -0.3:
+                        verdict = f"Крепкий ход, сохраняет равенство ({formatted})"
+                    elif pawns >= -1.2:
+                        verdict = f"Неточность ({formatted}), упущен перевес"
+                    elif pawns >= -2.5:
+                        verdict = f"Ошибка ({formatted}), потеря материала"
+                    else:
+                        verdict = f"Грубый зевок ({formatted})! Позиция критическая"
+
+                return {
+                    "score_formatted": formatted,
+                    "pawns": pawns,
+                    "is_mate": pov_score.is_mate(),
+                    "mate_moves": pov_score.mate() if pov_score.is_mate() else None,
+                    "verdict": verdict,
+                    "depth": info.get("depth", depth),
+                }
+        except Exception as e:
+            return {"score_formatted": "N/A", "verdict": f"Не удалось оценить ход: {e}"}
+
