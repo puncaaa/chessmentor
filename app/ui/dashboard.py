@@ -33,6 +33,8 @@ from app.services.chess_analyzer import ChessEngineAnalyzer
 from app.services.llm_reporter import GameMetricsAggregator, LLMReporterService
 from app.services.puzzle_service import PuzzleGeneratorService
 from app.services.pdf_generator import PDFReportGenerator
+from app.services.opening_analyzer import OpeningAnalyzerService, RepertoireAnalysisResult, OpeningGapInfo
+from app.services.worksheet_generator import WorksheetPDFGenerator
 from app.ui.components.chessboard_component import render_interactive_chessboard
 from app.schemas.chess import GameAnalysisResult, AnalyzedMove, GamePhase, ErrorSeverity, TacticalTag
 
@@ -651,6 +653,23 @@ with tab_board:
         col_list, col_board = st.columns([4, 6], gap="large")
 
         with col_list:
+            if all_student_errors:
+                worksheet_pdf = WorksheetPDFGenerator.generate_worksheet(
+                    student_name=student_display_name,
+                    error_events=all_student_errors,
+                    games=games_list,
+                    max_puzzles=4
+                )
+                st.download_button(
+                    label="📥 Скачать листок задач А4 (Worksheet PDF)",
+                    data=worksheet_pdf,
+                    file_name=f"ChessWorksheet_{student_display_name.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="btn_download_worksheet_tab1"
+                )
+                st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+
             st.markdown("### Партии ученика")
             
             game_options = {
@@ -1228,6 +1247,152 @@ with tab_analytics:
             else:
                 st.info("Нет зафиксированных тактических ошибок.")
 
+        st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
+        st.divider()
+
+        # ====================================================================
+        # ДЕБЮТНОЕ ДЕРЕВО И ДЫРЫ В РЕПЕРТУАРЕ (REPERTOIRE GAP FINDER)
+        # ====================================================================
+        st.markdown("### ♟️ Дебютный репертуар и Дыры (Repertoire Gap Finder)")
+        st.caption("Автоматический аудит дебютного дерева, выявление систематических пробелов и потери темпа в первых 10–12 ходах")
+
+        repertoire_res = OpeningAnalyzerService.analyze_repertoire(
+            games=games_list,
+            student_name=student_display_name
+        )
+
+        # Главный тренерский инсайт
+        if repertoire_res.repertoire_holes:
+            holes_cnt = len(repertoire_res.repertoire_holes)
+            render_html(f"""
+            <div class="alert-card-danger" style="margin-top:10px; margin-bottom:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="font-weight:700; font-size:1.0rem; color:#F87171;">
+                        🚨 Обнаружены уязвимости в репертуаре ({holes_cnt})
+                    </span>
+                    <span class="badge-blunder">Требует внимания тренера</span>
+                </div>
+                <div style="font-size:0.92rem; color:#E5E7EB; line-height:1.45;">
+                    {repertoire_res.summary_insight}
+                </div>
+            </div>
+            """)
+        else:
+            render_html(f"""
+            <div class="alert-card-success" style="margin-top:10px; margin-bottom:16px;">
+                <div style="font-weight:700; font-size:1.0rem; color:#34D399; margin-bottom:4px;">
+                    ✅ Дебютный репертуар надежен
+                </div>
+                <div style="font-size:0.92rem; color:#E5E7EB;">
+                    {repertoire_res.summary_insight}
+                </div>
+            </div>
+            """)
+
+        # Сегментированный фильтр: За белых / За черных / Все дыры
+        rep_tab_choice = st.radio(
+            "Разрез дебютного репертуара:",
+            options=[
+                f"⚪ За Белых ({len(repertoire_res.white_openings)})",
+                f"⚫ За Черных ({len(repertoire_res.black_openings)})",
+                f"🚨 Все Дыры ({len(repertoire_res.repertoire_holes)})"
+            ],
+            horizontal=True,
+            index=0 if repertoire_res.white_openings else (1 if repertoire_res.black_openings else 2)
+        )
+
+        if "Белых" in rep_tab_choice:
+            current_openings = repertoire_res.white_openings
+        elif "Черных" in rep_tab_choice:
+            current_openings = repertoire_res.black_openings
+        else:
+            current_openings = repertoire_res.repertoire_holes
+
+        if not current_openings:
+            st.info("В выбранной категории дебютов не зафиксировано.")
+        else:
+            for op in current_openings:
+                # Бейдж статуса
+                if op.status == "Критическая дыра":
+                    st_badge = '<span class="badge-blunder">🚨 Критическая дыра</span>'
+                    card_border = "rgba(239, 68, 68, 0.3)"
+                elif op.status == "Требует разбора":
+                    st_badge = '<span class="badge-mistake">⚠️ Требует разбора</span>'
+                    card_border = "rgba(245, 158, 11, 0.3)"
+                else:
+                    st_badge = '<span class="badge-win">✅ Надежно</span>'
+                    card_border = "rgba(16, 185, 129, 0.25)"
+
+                color_icon = "⚪ Белые" if op.color == "white" else "⚫ Черные"
+                wr_color = '#34D399' if op.win_rate >= 50 else ('#FBBF24' if op.win_rate >= 40 else '#F87171')
+                err_color = '#F87171' if op.early_blunders_count > 0 else ('#FBBF24' if op.early_errors_count > 0 else '#34D399')
+                
+                # Рендеринг карточки дебюта
+                render_html(f"""
+                <div class="saas-card" style="border: 1px solid {card_border}; margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                        <div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="background:rgba(59,130,246,0.15); color:#60A5FA; border:1px solid rgba(59,130,246,0.3); padding:2px 8px; border-radius:6px; font-size:0.8rem; font-weight:700;">
+                                    {op.eco}
+                                </span>
+                                <span style="font-size:1.08rem; font-weight:700; color:#F3F4F6;">
+                                    {op.name}
+                                </span>
+                            </div>
+                            <div style="color:#9CA3AF; font-size:0.82rem; margin-top:4px;">
+                                Цвет фигур: <span style="color:#E5E7EB; font-weight:500;">{color_icon}</span>
+                            </div>
+                        </div>
+                        <div>
+                            {st_badge}
+                        </div>
+                    </div>
+
+                    <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:12px;">
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
+                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Партий</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:#F3F4F6; margin-top:2px;">{op.games_count}</div>
+                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">
+                                <span style="color:#34D399;">{op.wins}В</span> • 
+                                <span style="color:#9CA3AF;">{op.draws}Н</span> • 
+                                <span style="color:#F87171;">{op.losses}П</span>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
+                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Винрейт</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:{wr_color}; margin-top:2px;">
+                                {op.win_rate}%
+                            </div>
+                            <div style="background:rgba(255,255,255,0.08); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
+                                <div style="background:{wr_color}; width:{min(100.0, op.win_rate)}%; height:100%;"></div>
+                            </div>
+                        </div>
+
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
+                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">ACPL Дебюта</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:#38BDF8; margin-top:2px;">
+                                {op.opening_acpl} <span style="font-size:0.75rem; color:#9CA3AF; font-weight:400;">CPL</span>
+                            </div>
+                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">Точность: {op.opening_accuracy}%</div>
+                        </div>
+
+                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
+                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Ранние ошибки (1-15)</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:{err_color}; margin-top:2px;">
+                                {op.early_errors_count}
+                            </div>
+                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">Грубых зевков: {op.early_blunders_count}</div>
+                        </div>
+                    </div>
+
+                    <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px 14px; border:1px solid rgba(255,255,255,0.05); font-size:0.88rem; line-height:1.45; color:#E5E7EB;">
+                        <span style="color:#60A5FA; font-weight:600;">💡 Подсказка тренеру:</span> {op.coach_tip}
+                    </div>
+                </div>
+                """)
+
 
 # ----------------------------------------------------------------------------
 # ВКЛАДКА 3: ОТЧЕТЫ AI И ЭКСПОРТ (Сегментированный переключатель ролей)
@@ -1276,9 +1441,26 @@ with tab_ai:
             games_data=agg_input
         )
 
-        c_act1, c_act2 = st.columns([1, 1], gap="medium")
+        c_act1, c_act2, c_act3 = st.columns([1, 1, 1], gap="medium")
         with c_act1:
             gen_report_btn = st.button("✨ Сгенерировать актуальный AI-отчет", type="primary", use_container_width=True)
+
+        if all_student_errors:
+            worksheet_pdf_tab3 = WorksheetPDFGenerator.generate_worksheet(
+                student_name=student_display_name,
+                error_events=all_student_errors,
+                games=games_list,
+                max_puzzles=4
+            )
+            with c_act3:
+                st.download_button(
+                    label="📥 Скачать листок задач А4 (PDF)",
+                    data=worksheet_pdf_tab3,
+                    file_name=f"ChessWorksheet_{student_display_name.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key="btn_download_worksheet_tab3"
+                )
 
         if gen_report_btn or "cached_coach_report" in st.session_state:
             reporter = LLMReporterService()
