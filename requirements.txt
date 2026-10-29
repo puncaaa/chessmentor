@@ -23,6 +23,7 @@ openai>=1.52.0
 # UI & Reporting
 streamlit>=1.39.0
 reportlab>=4.2.5
+plotly>=5.24.0
 
 # Dev & Testing
 pytest>=8.3.3

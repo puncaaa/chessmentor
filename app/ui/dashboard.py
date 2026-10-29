@@ -3,6 +3,7 @@ import sys
 import io
 import base64
 import time
+import textwrap
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -10,6 +11,7 @@ import streamlit as st
 import chess
 import chess.svg
 import chess.pgn
+import plotly.graph_objects as go
 from sqlalchemy import select
 
 # Добавляем корневую директорию проекта в sys.path
@@ -35,7 +37,7 @@ from app.ui.components.chessboard_component import render_interactive_chessboard
 from app.schemas.chess import GameAnalysisResult, AnalyzedMove, GamePhase, ErrorSeverity, TacticalTag
 
 # ============================================================================
-# СТИЛИ И КОНФИГУРАЦИЯ СТРАНИЦЫ
+# СТИЛИ И КОНФИГУРАЦИЯ СТРАНИЦЫ (B2B SaaS Linear / Tailwind Slate Design System)
 # ============================================================================
 st.set_page_config(
     page_title="ChessCoach AI — B2B SaaS Dashboard",
@@ -44,64 +46,343 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def render_html(html_str: str):
+    """Безопасный нативный рендеринг HTML в Streamlit без искажения Markdown-парсером."""
+    st.html(html_str)
+
+
 CUSTOM_CSS = """
 <style>
-    .metric-card {
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 16px;
-        text-align: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+    /* Базовая типографика и тема */
+    html, body, [class*="css"], .stApp {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        background-color: #0B0F17 !important;
+        color: #F3F4F6 !important;
     }
-    .badge-blunder {
-        background-color: #fee2e2;
-        color: #ef4444;
-        padding: 4px 8px;
-        border-radius: 6px;
+
+    /* Аккуратные заголовки B2B SaaS (Linear-style) */
+    h1 {
+        font-size: 1.5rem !important;
+        font-weight: 700 !important;
+        color: #F3F4F6 !important;
+        letter-spacing: -0.02em !important;
+        margin-bottom: 0.5rem !important;
+    }
+    h2 {
+        font-size: 1.25rem !important;
+        font-weight: 600 !important;
+        color: #F3F4F6 !important;
+        letter-spacing: -0.01em !important;
+        margin-top: 0.75rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    h3 {
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+        color: #E5E7EB !important;
+        margin-bottom: 0.4rem !important;
+    }
+    h4 {
+        font-size: 0.95rem !important;
+        font-weight: 600 !important;
+        color: #9CA3AF !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+
+    /* Карточки и контейнеры Tailwind Slate */
+    .saas-card {
+        background-color: #161F30;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 18px 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        margin-bottom: 14px;
+        color: #F3F4F6;
+    }
+
+    .saas-card-subtle {
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    /* KPI блоки */
+    .kpi-card {
+        background-color: #161F30;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 130px;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(255, 255, 255, 0.16);
+    }
+    .kpi-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .kpi-title {
+        font-size: 0.8rem;
         font-weight: 600;
-        font-size: 0.85rem;
+        color: #9CA3AF;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .kpi-icon {
+        font-size: 1.25rem;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 6px;
+        border-radius: 8px;
+    }
+    .kpi-value {
+        font-size: 1.85rem;
+        font-weight: 700;
+        color: #F3F4F6;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
+        margin-bottom: 8px;
+    }
+    .kpi-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        width: fit-content;
+    }
+    .kpi-badge-blue { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .kpi-badge-green { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .kpi-badge-amber { background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .kpi-badge-red { background: rgba(239, 68, 68, 0.15); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    /* Бейджи ошибок и статусов */
+    .badge-blunder {
+        background-color: rgba(239, 68, 68, 0.15);
+        color: #F87171;
+        border: 1px solid rgba(239, 68, 68, 0.35);
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
     }
     .badge-mistake {
-        background-color: #fef3c7;
-        color: #d97706;
-        padding: 4px 8px;
+        background-color: rgba(245, 158, 11, 0.15);
+        color: #FBBF24;
+        border: 1px solid rgba(245, 158, 11, 0.35);
+        padding: 3px 8px;
         border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.85rem;
+        font-weight: 700;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
     }
     .badge-inaccuracy {
-        background-color: #e0f2fe;
-        color: #0284c7;
-        padding: 4px 8px;
+        background-color: rgba(56, 189, 248, 0.15);
+        color: #38BDF8;
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+    }
+
+    /* Бейджи исхода партии */
+    .badge-win {
+        background: rgba(16, 185, 129, 0.15);
+        color: #34D399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 3px 9px;
         border-radius: 6px;
         font-weight: 600;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
     }
-    .coach-card {
-        background-color: #f1f5f9;
-        border-left: 4px solid #3b82f6;
-        padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
-        margin-bottom: 12px;
+    .badge-loss {
+        background: rgba(239, 68, 68, 0.15);
+        color: #F87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
     }
-    .parent-card {
-        background-color: #f0fdf4;
-        border-left: 4px solid #10b981;
-        padding: 14px 18px;
-        border-radius: 0 8px 8px 0;
-        margin-bottom: 12px;
+    .badge-draw {
+        background: rgba(156, 163, 175, 0.15);
+        color: #9CA3AF;
+        border: 1px solid rgba(156, 163, 175, 0.3);
+        padding: 3px 9px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.8rem;
     }
-    .puzzle-box {
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
+
+    /* Карточки алертов (Отчеты AI, хронические паттерны) */
+    .alert-card-danger {
+        background: rgba(239, 68, 68, 0.06);
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        border-left: 4px solid #EF4444;
         border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 10px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        color: #F3F4F6;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .alert-card-info {
+        background: rgba(59, 130, 246, 0.06);
+        border: 1px solid rgba(59, 130, 246, 0.25);
+        border-left: 4px solid #3B82F6;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        color: #F3F4F6;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .alert-card-success {
+        background: rgba(16, 185, 129, 0.06);
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        border-left: 4px solid #10B981;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+        color: #F3F4F6;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Карточка домашнего задания */
+    .homework-card {
+        background-color: #161F30;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 16px 18px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+    }
+
+    /* Стилизация вкладок Streamlit */
+    div[data-baseweb="tab-list"] {
+        gap: 8px !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        padding-bottom: 4px !important;
+    }
+    button[data-baseweb="tab"] {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        color: #9CA3AF !important;
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        border-radius: 8px !important;
+        padding: 8px 16px !important;
+        transition: all 0.15s ease !important;
+    }
+    button[data-baseweb="tab"]:hover {
+        color: #F3F4F6 !important;
+        background: rgba(255, 255, 255, 0.04) !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] {
+        color: #F3F4F6 !important;
+        background: rgba(59, 130, 246, 0.12) !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        font-weight: 600 !important;
+    }
+
+    /* Кнопки Streamlit */
+    div.stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
+        border: 1px solid rgba(96, 165, 250, 0.4) !important;
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35) !important;
+        transition: all 0.2s ease !important;
+    }
+    div.stButton > button[kind="primary"]:hover {
+        background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+        box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5) !important;
+        transform: translateY(-1px) !important;
+    }
+    div.stButton > button:not([kind="primary"]) {
+        background: #161F30 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #E5E7EB !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
+    }
+    div.stButton > button:not([kind="primary"]):hover {
+        border-color: rgba(255, 255, 255, 0.25) !important;
+        background: #1E293B !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Кнопка скачивания PDF */
+    div.stDownloadButton > button {
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
+        border: 1px solid rgba(52, 211, 153, 0.4) !important;
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
+        transition: all 0.2s ease !important;
+    }
+    div.stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+        box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* Кнопки-ссылки */
+    a[data-testid="stLinkButton"] {
+        background: #161F30 !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        color: #60A5FA !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+        transition: all 0.15s ease !important;
+    }
+    a[data-testid="stLinkButton"]:hover {
+        background: rgba(59, 130, 246, 0.15) !important;
+        border-color: #3B82F6 !important;
+        color: #93C5FD !important;
+    }
+
+    /* Боковая панель */
+    section[data-testid="stSidebar"] {
+        background-color: #0d131f !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
+    }
+
+    /* Разделители */
+    hr {
+        border-color: rgba(255, 255, 255, 0.08) !important;
+        margin: 1.2rem 0 !important;
+    }
+
+    /* Код и плашки */
+    .stCodeBlock, div[data-testid="stCode"] {
+        background-color: #0F172A !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 8px !important;
     }
 </style>
 """
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+render_html(CUSTOM_CSS)
 
 # Инициализация базы данных
 init_db()
@@ -180,11 +461,11 @@ def parse_game_plies(pgn_str: str, error_events: List[ChessErrorEvent]) -> List[
             if err:
                 eval_text = f"🚨 {err.severity.upper()} (-{err.centipawn_loss} CPL) • {err.tactical_tag or 'тактическая ошибка'}"
             elif ply_idx <= 14:
-                eval_text = "+0.2 • Борьба за центр и дебютное развитие фигур"
+                eval_text = "+0.2 • Дебютное развитие и борьба за центр"
             elif ply_idx <= 40:
-                eval_text = "+0.4 • Позиционное маневрирование в миттельшпиле"
+                eval_text = "+0.4 • Позиционная борьба в миттельшпиле"
             else:
-                eval_text = "+0.1 • Реализация плана в эндшпиле"
+                eval_text = "+0.1 • Эндшпиль и реализация преимущества"
                 
             plies.append({
                 "ply": ply_idx,
@@ -201,7 +482,6 @@ def parse_game_plies(pgn_str: str, error_events: List[ChessErrorEvent]) -> List[
         return plies
     except Exception:
         return []
-
 
 
 def get_or_create_student(name: str, username: str, platform: str) -> str:
@@ -235,12 +515,21 @@ def get_or_create_student(name: str, username: str, platform: str) -> str:
         session.flush()
         return student.id
 
+
 # ============================================================================
 # БОКОВАЯ ПАНЕЛЬ (SIDEBAR)
 # ============================================================================
 with st.sidebar:
-    st.title("♟️ ChessCoach AI")
-    st.caption("B2B SaaS аналитики для шахматных школ и тренеров")
+    render_html("""
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <span style="font-size:1.8rem;">♟️</span>
+        <div>
+            <div style="font-size:1.2rem; font-weight:700; color:#F3F4F6; letter-spacing:-0.02em;">ChessCoach AI</div>
+            <div style="font-size:0.75rem; color:#9CA3AF; text-transform:uppercase; letter-spacing:0.05em;">B2B SaaS Platform</div>
+        </div>
+    </div>
+    """)
+    st.caption("Аналитический стек для профессиональных тренеров и шахматных академий")
     st.divider()
 
     st.subheader("👤 Профиль ученика")
@@ -259,14 +548,6 @@ with st.sidebar:
     games_count = st.slider("Число партий для загрузки", min_value=3, max_value=10, value=3)
 
     sync_btn = st.button("🚀 Синхронизировать и разобрать партии", use_container_width=True, type="primary")
-
-    st.divider()
-    st.subheader("🎭 Режим отображения")
-    active_role = st.radio(
-        "Роль пользователя",
-        options=["Кабинет тренера", "Кабинет родителя"],
-        index=0
-    )
 
 # Автоматическое переключение ученика при смене платформы/никнейма
 platform_key = f"{platform}_{username}"
@@ -336,11 +617,23 @@ if current_student_id:
                 error_events_by_game.setdefault(err.game_id, []).append(err)
 
 # ============================================================================
-# ГЛАВНЫЙ ЭКРАН (3 ВКЛАДКИ)
+# ГЛАВНЫЙ ЭКРАН (ШАПКА И 3 ВКЛАДКИ)
 # ============================================================================
-st.header(f"Аналитический дашборд: {st.session_state.get('student_name', 'Ученик')}")
-role_badge = "👔 Тренерский аудит" if active_role == "Кабинет тренера" else "👨‍👩‍👦 Родительский отчет"
-st.caption(f"Текущий режим: **{role_badge}** | Всего партий в базе: **{len(games_list)}**")
+student_display_name = st.session_state.get('student_name', 'Ученик')
+render_html(f"""
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">
+    <div>
+        <h1 style="margin:0; font-size:1.6rem; font-weight:700;">{student_display_name}</h1>
+        <div style="color:#9CA3AF; font-size:0.85rem; margin-top:2px;">
+            Игровой профиль: <span style="color:#3B82F6; font-weight:600;">@{username}</span> ({platform.upper()}) • Всего партий в базе: <span style="color:#F3F4F6; font-weight:600;">{len(games_list)}</span>
+        </div>
+    </div>
+    <div style="display:flex; gap:8px;">
+        <span class="badge-win">🟢 Движок Stockfish 19 активен</span>
+        <span class="badge-inaccuracy">⚡ Eager Sync Engine</span>
+    </div>
+</div>
+""")
 
 tab_board, tab_analytics, tab_ai = st.tabs([
     "📋 Список партий и Доска",
@@ -349,68 +642,173 @@ tab_board, tab_analytics, tab_ai = st.tabs([
 ])
 
 # ----------------------------------------------------------------------------
-# ВКЛАДКА 1: СПИСОК ПАРТИЙ И ДОСКА
+# ВКЛАДКА 1: СПИСОК ПАРТИЙ И ДОСКА (40% / 60% Grid Layout)
 # ----------------------------------------------------------------------------
 with tab_board:
     if not games_list:
         st.info("💡 Партии еще не загружены. Нажмите 'Синхронизировать и разобрать партии' в боковой панели!")
     else:
-        col_list, col_board = st.columns([5, 7])
+        col_list, col_board = st.columns([4, 6], gap="large")
 
         with col_list:
-            st.subheader("Партии ученика")
+            st.markdown("### Партии ученика")
             
             game_options = {
                 f"[{g.platform.upper()}] vs {g.opponent_username} ({g.result}) — Точность: {g.accuracy_score or 0}%": g.id
                 for g in games_list
             }
-            selected_label = st.selectbox("Выберите партию для анализа:", options=list(game_options.keys()))
+            selected_label = st.selectbox(
+                "Выберите партию для анализа:", 
+                options=list(game_options.keys()),
+                label_visibility="collapsed"
+            )
             selected_game_id = game_options[selected_label]
-            
             selected_game = next(g for g in games_list if g.id == selected_game_id)
             
-            st.markdown(f"""
-            **Соперник:** {selected_game.opponent_username} ({selected_game.opponent_rating or 'unrated'})  
-            **Цвет:** {'Белые ⚪' if selected_game.student_color == 'white' else 'Черные ⚫'} | **Результат:** {selected_game.result}  
-            **Контроль:** {selected_game.time_control or 'N/A'} | **Точность:** {selected_game.accuracy_score or 0}% | **ACPL:** {selected_game.acpl or 0}  
-            **Зевков:** {selected_game.blunders_count} | **Ошибок:** {selected_game.mistakes_count} | **Неточностей:** {selected_game.inaccuracies_count}
-            """)
-            st.divider()
+            # Определение бейджей для метаданных партии
+            res_str = selected_game.result or "*"
+            is_win = (selected_game.student_color == 'white' and res_str == '1-0') or (selected_game.student_color == 'black' and res_str == '0-1')
+            is_loss = (selected_game.student_color == 'white' and res_str == '0-1') or (selected_game.student_color == 'black' and res_str == '1-0')
+            if is_win:
+                result_badge = '<span class="badge-win">🏆 ПОБЕДА (1-0)</span>' if res_str == '1-0' else '<span class="badge-win">🏆 ПОБЕДА (0-1)</span>'
+            elif is_loss:
+                result_badge = '<span class="badge-loss">❌ ПОРАЖЕНИЕ (0-1)</span>' if res_str == '0-1' else '<span class="badge-loss">❌ ПОРАЖЕНИЕ (1-0)</span>'
+            else:
+                result_badge = '<span class="badge-draw">🤝 НИЧЬЯ (1/2-1/2)</span>'
 
+            color_badge = "⚪ Белые" if selected_game.student_color == "white" else "⚫ Черные"
+            acc_val = float(selected_game.accuracy_score or 0.0)
+            
+            # Аккуратная карточка метаданных партии в левой колонке (без отступов, вызывающих Markdown code blocks)
+            render_html(f"""
+            <div class="saas-card" style="margin-top:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span style="background:rgba(59,130,246,0.12); color:#60A5FA; border:1px solid rgba(59,130,246,0.25); padding:2px 8px; border-radius:6px; font-size:0.75rem; font-weight:600;">
+                            ⚡ {selected_game.time_control or 'Standard'}
+                        </span>
+                        <span style="color:#9CA3AF; font-size:0.8rem; font-weight:500;">
+                            {color_badge}
+                        </span>
+                    </div>
+                    {result_badge}
+                </div>
+
+                <div style="margin-bottom:14px;">
+                    <div style="color:#9CA3AF; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Соперник</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:#F3F4F6;">
+                        {selected_game.opponent_username} 
+                        <span style="color:#9CA3AF; font-size:0.85rem; font-weight:400;">({selected_game.opponent_rating or 'unrated'})</span>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px 12px;">
+                        <div style="color:#9CA3AF; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Точность CAPS</div>
+                        <div style="font-size:1.35rem; font-weight:700; color:#10B981; margin-top:2px;">{acc_val}%</div>
+                        <div style="background:rgba(255,255,255,0.08); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
+                            <div style="background:#10B981; width:{min(100.0, acc_val)}%; height:100%; border-radius:999px;"></div>
+                        </div>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px 12px;">
+                        <div style="color:#9CA3AF; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Средний ACPL</div>
+                        <div style="font-size:1.35rem; font-weight:700; color:#38BDF8; margin-top:2px;">{selected_game.acpl or 0} <span style="font-size:0.8rem; color:#9CA3AF; font-weight:400;">CPL</span></div>
+                        <div style="color:#9CA3AF; font-size:0.75rem; margin-top:6px;">Потеря центипешек</div>
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border-radius:8px; padding:8px 12px; border:1px solid rgba(255,255,255,0.04);">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="badge-blunder">BLUNDER: {selected_game.blunders_count}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="badge-mistake">MISTAKE: {selected_game.mistakes_count}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="badge-inaccuracy">INACCURACY: {selected_game.inaccuracies_count}</span>
+                    </div>
+                </div>
+            </div>
+            """)
+
+            # Список ошибок в партии
             error_events = error_events_by_game.get(selected_game.id, [])
             if not error_events:
-                st.success("🎉 В этой партии ученик не допустил грубых ошибок и зевков!")
+                render_html("""
+                <div class="alert-card-success" style="margin-top:14px;">
+                    <div style="font-weight:600; font-size:0.95rem;">🎉 Чистая гроссмейстерская игра!</div>
+                    <div style="font-size:0.85rem; color:#9CA3AF; margin-top:3px;">В этой партии ученик не допустил критических ошибок и грубых зевков.</div>
+                </div>
+                """)
                 active_error = None
             else:
-                st.subheader(f"Критические ошибки ({len(error_events)}):")
+                st.markdown(f"#### Критические моменты ({len(error_events)})")
+                
                 err_options = {
-                    f"Ход {e.move_number} ({e.played_move_san}) — {e.severity.upper()} (CPL: -{e.centipawn_loss})": e
+                    f"Ход {e.move_number} ({e.played_move_san}) — {e.severity.upper()} (-{e.centipawn_loss} CPL)": e
                     for e in error_events
                 }
-                selected_err_label = st.selectbox("Выберите ошибку для просмотра:", options=list(err_options.keys()))
+                selected_err_label = st.selectbox(
+                    "Выберите ошибку для детального разбора:", 
+                    options=list(err_options.keys()),
+                    label_visibility="collapsed"
+                )
                 active_error: Optional[ChessErrorEvent] = err_options[selected_err_label]
 
                 if active_error:
-                    severity_class = f"badge-{active_error.severity}"
+                    severity_badge = f"badge-{active_error.severity}"
                     theme_info = PuzzleGeneratorService.get_theme_info(active_error.tactical_tag or "tactical_blunder")
+                    time_alert = f'<span class="badge-blunder" style="margin-left:6px;">🚨 ЦЕЙТНОТ ({active_error.clock_remaining_seconds}с)</span>' if active_error.is_time_trouble else ''
                     
-                    st.markdown(f"""
-                    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-top:8px;">
-                        <div><b>Серьезность:</b> <span class="{severity_class}">{active_error.severity.upper()}</span></div>
-                        <div style="margin-top:6px;"><b>Фаза игры:</b> {active_error.phase.capitalize()}</div>
-                        <div style="margin-top:4px;"><b>Тактический тег:</b> <code>{active_error.tactical_tag or 'tactical_blunder'}</code></div>
-                        <div style="margin-top:4px;"><b>Потеря CPL:</b> -{active_error.centipawn_loss} | <b>Падение шансов:</b> -{round((active_error.win_rate_drop or 0)*100, 1)}%</div>
-                        <div style="margin-top:4px;"><b>Остаток времени:</b> {active_error.clock_remaining_seconds or 'N/A'}с {'🚨 <i>(Цейтнот!)</i>' if active_error.is_time_trouble else ''}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    render_html(f"""
+                    <div class="saas-card" style="margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <span class="{severity_badge}">{active_error.severity.upper()}</span>
+                            <span style="color:#9CA3AF; font-size:0.8rem; font-weight:500;">Фаза: {active_error.phase.capitalize()}</span>
+                        </div>
 
-                    st.markdown(f"**🎯 Рекомендованная тренировка:** {theme_info['title']}")
-                    st.link_button("🧩 Открыть задачи по этой теме на Lichess", theme_info["url"], use_container_width=True)
+                        <div style="font-size:0.9rem; color:#F3F4F6; margin-bottom:8px;">
+                            <b>Тактический паттерн:</b> 
+                            <code style="background:rgba(255,255,255,0.06); color:#60A5FA; padding:2px 6px; border-radius:4px;">{active_error.tactical_tag or 'tactical_blunder'}</code>
+                        </div>
+
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:6px 10px;">
+                                <div style="font-size:0.75rem; color:#9CA3AF;">Потеря оценки</div>
+                                <div style="font-size:1.05rem; font-weight:700; color:#F87171;">-{active_error.centipawn_loss} CPL</div>
+                            </div>
+                            <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:6px 10px;">
+                                <div style="font-size:0.75rem; color:#9CA3AF;">Падение шансов</div>
+                                <div style="font-size:1.05rem; font-weight:700; color:#FBBF24;">-{round((active_error.win_rate_drop or 0)*100, 1)}%</div>
+                            </div>
+                        </div>
+
+                        <div style="font-size:0.8rem; color:#9CA3AF; margin-bottom:12px;">
+                            Время на ход: {active_error.clock_remaining_seconds or 'N/A'}с {time_alert}
+                        </div>
+
+                        <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
+                            <div style="font-size:0.8rem; color:#9CA3AF; margin-bottom:4px;">🎯 Рекомендованный тренажер темы:</div>
+                            <div style="font-weight:600; color:#F3F4F6; font-size:0.88rem; margin-bottom:8px;">{theme_info['title']}</div>
+                        </div>
+                    </div>
+                    """)
+
+                    st.link_button(
+                        f"🧩 Тренировать тему на Lichess", 
+                        theme_info["url"], 
+                        use_container_width=True
+                    )
 
         with col_board:
-            st.subheader("Интерактивная доска позиции")
+            # Правая колонка: Центрированная интерактивная доска + контролы
+            render_html("""
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0;">Интерактивная доска позиции</h3>
+            </div>
+            """)
             
-            # Переключатель режимов доски
+            # Переключатель режимов доски (сегментированный)
             board_mode = st.radio(
                 "Режим работы с доской:",
                 options=["🎯 Тренажер ошибки (Drag-and-Drop)", "📖 Просмотр ходов партии"],
@@ -503,7 +901,7 @@ with tab_board:
                                 }
                                 st.rerun()
 
-                    # Кнопки управления тренировкой
+                    # Панель управления под доской
                     c_btn1, c_btn2 = st.columns(2)
                     with c_btn1:
                         if st.button("💡 Показать правильный ход", use_container_width=True, key=f"btn_best_{err_id}"):
@@ -521,28 +919,50 @@ with tab_board:
                             st.session_state[f"feedback_{err_id}"] = None
                             st.rerun()
 
+                    # Справочная плашка хода партии vs лучшего хода
+                    render_html(f"""
+                    <div style="display:flex; justify-content:space-around; background:#161F30; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; margin-top:8px;">
+                        <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
+                            <span style="color:#EF4444;">🔴 В партии:</span> 
+                            <code style="background:rgba(239,68,68,0.15); color:#F87171; padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.played_move_san}</code>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
+                            <span style="color:#10B981;">🟢 Stockfish 19:</span> 
+                            <code style="background:rgba(16,185,129,0.15); color:#34D399; padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.best_move_san}</code>
+                        </div>
+                    </div>
+                    """)
+
                     # Вывод обратной связи по сделанному ходу
                     fb = st.session_state.get(f"feedback_{err_id}")
                     if fb:
                         if fb["type"] == "blunder":
-                            st.warning(fb["text"])
+                            render_html(f"""
+                            <div class="alert-card-danger" style="margin-top:10px;">
+                                {fb['text']}
+                            </div>
+                            """)
                         elif fb["type"] == "best":
-                            st.success(fb["text"])
+                            render_html(f"""
+                            <div class="alert-card-success" style="margin-top:10px;">
+                                {fb['text']}
+                            </div>
+                            """)
                         else:
-                            st.info(fb["text"])
+                            render_html(f"""
+                            <div class="alert-card-info" style="margin-top:10px;">
+                                {fb['text']}
+                            </div>
+                            """)
                     else:
-                        st.caption("✋ **Интерактивный режим:** перетащите фигуру мышкой на доске, чтобы проверить свой ход.")
-
-                    # Справочная плашка
-                    st.markdown(f"""
-                    <div style="display:flex; justify-content:space-around; background:#f1f5f9; padding:8px; border-radius:8px; font-size:0.9rem; margin-top:4px;">
-                        <div>🔴 <b>В партии сыграно:</b> <code>{active_error.played_move_san}</code> ({active_error.played_move_uci})</div>
-                        <div>🟢 <b>Лучший ход Stockfish:</b> <code>{active_error.best_move_san}</code> ({active_error.best_move_uci})</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        st.caption("✋ **Интерактивный тренажер:** перетащите фигуру на доске, чтобы проверить свой вариант защиты.")
 
                 else:
-                    st.success("🎉 В этой партии ученик не допустил критических ошибок. Вы можете свободно тренироваться на доске!")
+                    render_html("""
+                    <div class="alert-card-success">
+                        🎉 В этой партии ошибок не обнаружено. Вы можете свободно тренироваться на доске!
+                    </div>
+                    """)
                     render_interactive_chessboard(
                         fen=chess.STARTING_FEN,
                         orientation=selected_game.student_color,
@@ -563,7 +983,7 @@ with tab_board:
                 st.session_state[ply_key] = cur_ply
                 ply_data = plies[cur_ply]
 
-                # Отрисовка доски для текущего полухода
+                # Отрисовка интерактивной доски для текущего полухода
                 render_interactive_chessboard(
                     fen=ply_data["fen"],
                     orientation=selected_game.student_color,
@@ -574,19 +994,19 @@ with tab_board:
                 # Кнопки пошаговой навигации (|<<, <, >, >>)
                 n1, n2, n3, n4 = st.columns(4)
                 with n1:
-                    if st.button("⏮️ |<<", use_container_width=True, key=f"btn_first_{selected_game.id}", help="В начало партии"):
+                    if st.button("⏮️ В начало", use_container_width=True, key=f"btn_first_{selected_game.id}"):
                         st.session_state[ply_key] = 0
                         st.rerun()
                 with n2:
-                    if st.button("◀️ <", use_container_width=True, key=f"btn_prev_{selected_game.id}", help="Ход назад"):
+                    if st.button("◀️ Назад", use_container_width=True, key=f"btn_prev_{selected_game.id}"):
                         st.session_state[ply_key] = max(0, cur_ply - 1)
                         st.rerun()
                 with n3:
-                    if st.button("> ▶️", use_container_width=True, key=f"btn_next_{selected_game.id}", help="Ход вперед"):
+                    if st.button("Вперед ▶️", use_container_width=True, key=f"btn_next_{selected_game.id}"):
                         st.session_state[ply_key] = min(len(plies) - 1, cur_ply + 1)
                         st.rerun()
                 with n4:
-                    if st.button(">>| ⏭️", use_container_width=True, key=f"btn_last_{selected_game.id}", help="В конец партии"):
+                    if st.button("В конец ⏭️", use_container_width=True, key=f"btn_last_{selected_game.id}"):
                         st.session_state[ply_key] = len(plies) - 1
                         st.rerun()
 
@@ -598,34 +1018,43 @@ with tab_board:
                     key=ply_key
                 )
 
-                # Информационная плашка с оценкой хода движком
+                # Информационная плашка с оценкой хода движком в B2B SaaS стиле
                 is_err = ply_data.get("error") is not None
-                border_color = "#ef4444" if is_err else "#3b82f6"
-                bg_color = "#fef2f2" if is_err else "#f8fafc"
+                card_class = "alert-card-danger" if is_err else "saas-card"
+                accent_color = "#EF4444" if is_err else "#3B82F6"
 
-                st.markdown(f"""
-                <div style="background:{bg_color}; border-left:4px solid {border_color}; border-radius:4px; padding:10px 14px; margin-top:4px;">
-                    <div style="font-weight:700; font-size:1.05rem; color:#0f172a;">
-                        Ход: {ply_data['san']} ({'Белые ⚪' if ply_data['is_white'] else 'Черные ⚫'})
+                render_html(f"""
+                <div class="{card_class}" style="margin-top:4px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div style="font-weight:700; font-size:1.05rem; color:#F3F4F6;">
+                            Ход: {ply_data['san']} 
+                            <span style="font-size:0.85rem; color:#9CA3AF; font-weight:400; margin-left:6px;">
+                                ({'Белые ⚪' if ply_data['is_white'] else 'Черные ⚫'})
+                            </span>
+                        </div>
+                        <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:6px; font-size:0.75rem; color:#9CA3AF;">
+                            Полуход #{cur_ply} / {len(plies)-1}
+                        </span>
                     </div>
-                    <div style="color:{border_color}; font-weight:600; font-size:0.95rem; margin-top:3px;">
-                        Оценка Stockfish: {ply_data['eval_text']}
+                    <div style="color:{accent_color}; font-weight:600; font-size:0.92rem; margin-top:6px;">
+                        Оценка позиции: {ply_data['eval_text']}
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """)
+
 
 # ----------------------------------------------------------------------------
-# ВКЛАДКА 2: АНАЛИТИКА УЧЕНИКА
+# ВКЛАДКА 2: АНАЛИТИКА УЧЕНИКА (Dark Plotly & Modern KPI Cards)
 # ----------------------------------------------------------------------------
 with tab_analytics:
-    st.subheader("📈 Агрегированная аналитика пула партий")
+    st.markdown("### 📊 Аналитический срез пула партий")
 
     if not games_list:
         st.info("Нет данных для отображения аналитики.")
     else:
         total_g = len(games_list)
         wins_count = sum(1 for g in games_list if (g.student_color == 'white' and g.result == '1-0') or (g.student_color == 'black' and g.result == '0-1'))
-        win_rate = round((wins_count / total_g) * 100, 1)
+        win_rate = round((wins_count / total_g) * 100, 1) if total_g > 0 else 0.0
         
         valid_acc = [float(g.accuracy_score) for g in games_list if g.accuracy_score is not None]
         avg_acc = round(sum(valid_acc) / len(valid_acc), 1) if valid_acc else 0.0
@@ -636,18 +1065,76 @@ with tab_analytics:
         all_errors = all_student_errors
         time_trouble_errors = sum(1 for e in all_errors if e.is_time_trouble)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Побед / Винрейт", f"{wins_count}/{total_g} ({win_rate}%)")
-        c2.metric("Точность (CAPS)", f"{avg_acc}%")
-        c3.metric("Средний ACPL", f"{avg_acpl}")
-        c4.metric("Зевков под флагом", f"{time_trouble_errors}", delta=f"{len(all_errors)} всего ошибок", delta_color="inverse")
+        # 4 Современных KPI Блока в стиле Linear / Tailwind Slate
+        k1, k2, k3, k4 = st.columns(4)
+        
+        with k1:
+            render_html(f"""
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Винрейт ученика</span>
+                    <span class="kpi-icon">🏆</span>
+                </div>
+                <div class="kpi-value">{win_rate}%</div>
+                <div class="kpi-badge kpi-badge-green">
+                    <span>Побед: {wins_count} из {total_g}</span>
+                </div>
+            </div>
+            """)
 
-        st.divider()
+        with k2:
+            acc_badge_class = "kpi-badge-green" if avg_acc >= 85 else ("kpi-badge-blue" if avg_acc >= 75 else "kpi-badge-amber")
+            acc_status = "Высокий уровень" if avg_acc >= 85 else ("Стабильная игра" if avg_acc >= 75 else "Нужна практика")
+            render_html(f"""
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Средняя точность</span>
+                    <span class="kpi-icon">🎯</span>
+                </div>
+                <div class="kpi-value">{avg_acc}%</div>
+                <div class="kpi-badge {acc_badge_class}">
+                    <span>{acc_status}</span>
+                </div>
+            </div>
+            """)
 
-        g_col1, g_col2 = st.columns(2)
+        with k3:
+            acpl_status = "Гроссмейстерский" if avg_acpl <= 25 else ("Кандидат в мастера" if avg_acpl <= 45 else "Разрядный уровень")
+            render_html(f"""
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Средний ACPL</span>
+                    <span class="kpi-icon">⚡</span>
+                </div>
+                <div class="kpi-value">{avg_acpl} <span style="font-size:0.9rem; color:#9CA3AF; font-weight:400;">CPL</span></div>
+                <div class="kpi-badge kpi-badge-blue">
+                    <span>{acpl_status}</span>
+                </div>
+            </div>
+            """)
+
+        with k4:
+            tt_badge_class = "kpi-badge-red" if time_trouble_errors > 0 else "kpi-badge-green"
+            render_html(f"""
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">Зевков под флагом</span>
+                    <span class="kpi-icon">⏱️</span>
+                </div>
+                <div class="kpi-value">{time_trouble_errors}</div>
+                <div class="kpi-badge {tt_badge_class}">
+                    <span>Всего ошибок: {len(all_errors)}</span>
+                </div>
+            </div>
+            """)
+
+        st.markdown("<div style='height:20px;'></div>", unsafe_allow_html=True)
+
+        # Интерактивные графики Plotly с глубокой темной темой
+        g_col1, g_col2 = st.columns(2, gap="medium")
 
         with g_col1:
-            st.markdown("#### Ошибки по фазам игры")
+            st.markdown("#### ⏳ Ошибки по фазам партии")
             phase_counts = {"Дебют": 0, "Миттельшпиль": 0, "Эндшпиль": 0}
             for e in all_errors:
                 if e.phase == "opening":
@@ -656,29 +1143,113 @@ with tab_analytics:
                     phase_counts["Миттельшпиль"] += 1
                 elif e.phase == "endgame":
                     phase_counts["Эндшпиль"] += 1
-            
-            st.bar_chart(phase_counts, color="#3b82f6")
+
+            # Построение Plotly столбчатого графика с скругленными краями
+            fig_phases = go.Figure(go.Bar(
+                x=list(phase_counts.keys()),
+                y=list(phase_counts.values()),
+                marker=dict(
+                    color='#3B82F6',
+                    cornerradius=8,
+                    line=dict(width=0)
+                ),
+                text=list(phase_counts.values()),
+                textposition='outside',
+                textfont=dict(color='#F3F4F6', family='Inter', size=13),
+                hovertemplate="<b>%{x}</b><br>Ошибок: %{y}<extra></extra>"
+            ))
+            fig_phases.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(family='Inter', color='#9CA3AF'),
+                margin=dict(l=10, r=10, t=30, b=20),
+                height=280,
+                xaxis=dict(
+                    showgrid=False,
+                    tickfont=dict(color='#F3F4F6', size=13, family='Inter'),
+                    linecolor='rgba(255,255,255,0.08)'
+                ),
+                yaxis=dict(
+                    showgrid=True,
+                    gridcolor='rgba(255,255,255,0.06)',
+                    tickfont=dict(color='#9CA3AF', size=11, family='Inter'),
+                    zeroline=False
+                )
+            )
+            st.plotly_chart(fig_phases, use_container_width=True, config={"displayModeBar": False})
 
         with g_col2:
-            st.markdown("#### Топ тактических слабостей")
+            st.markdown("#### 🎯 Тактические слабости (Паттерны)")
             tag_counts = {}
             for e in all_errors:
                 tag = e.tactical_tag or "tactical_blunder"
                 tag_counts[tag] = tag_counts.get(tag, 0) + 1
             
             if tag_counts:
-                st.bar_chart(tag_counts, color="#ef4444")
+                # Сортировка по возрастанию для правильного порядка в горизонтальном баре
+                sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1])
+                labels = [item[0] for item in sorted_tags]
+                values = [item[1] for item in sorted_tags]
+
+                fig_tags = go.Figure(go.Bar(
+                    x=values,
+                    y=labels,
+                    orientation='h',
+                    marker=dict(
+                        color=values,
+                        colorscale=[[0, '#F59E0B'], [1, '#EF4444']],
+                        cornerradius=6,
+                        showscale=False
+                    ),
+                    text=values,
+                    textposition='outside',
+                    textfont=dict(color='#F3F4F6', family='Inter', size=12),
+                    hovertemplate="Паттерн: <b>%{y}</b><br>Частота: %{x}<extra></extra>"
+                ))
+                fig_tags.update_layout(
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(family='Inter', color='#9CA3AF'),
+                    margin=dict(l=10, r=10, t=30, b=20),
+                    height=280,
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(255,255,255,0.06)',
+                        tickfont=dict(color='#9CA3AF', size=11, family='Inter'),
+                        zeroline=False
+                    ),
+                    yaxis=dict(
+                        showgrid=False,
+                        tickfont=dict(color='#F3F4F6', size=12, family='Inter'),
+                        linecolor='rgba(255,255,255,0.08)'
+                    )
+                )
+                st.plotly_chart(fig_tags, use_container_width=True, config={"displayModeBar": False})
             else:
                 st.info("Нет зафиксированных тактических ошибок.")
 
+
 # ----------------------------------------------------------------------------
-# ВКЛАДКА 3: ОТЧЕТЫ AI И ЭКСПОРТ В PDF
+# ВКЛАДКА 3: ОТЧЕТЫ AI И ЭКСПОРТ (Сегментированный переключатель ролей)
 # ----------------------------------------------------------------------------
 with tab_ai:
-    st.subheader(f"Генерация отчетов AI ({active_role})")
+    # Переключатель ролей прямо над отчетом в виде сегментированного таба
+    r_col1, r_col2 = st.columns([6, 4])
+    with r_col1:
+        st.markdown("### 🤖 Интеллектуальные отчеты AI")
+        st.caption("Генерация экспертного анализа партий для тренерского штаба и родителей")
+    with r_col2:
+        tab_ai_role = st.radio(
+            "Аудитория отчета:",
+            options=["👔 Кабинет тренера", "👨‍👩‍👦 Отчет для родителей"],
+            horizontal=True,
+            index=0
+        )
     
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
     if not games_list:
-        st.info("Сначала загрузите партии ученика.")
+        st.info("Сначала загрузите партии ученика в боковой панели.")
     else:
         agg_input = []
         for g in games_list:
@@ -705,15 +1276,15 @@ with tab_ai:
             games_data=agg_input
         )
 
-        btn_col, pdf_col = st.columns([1, 1])
-        with btn_col:
-            gen_report_btn = st.button("🤖 Сгенерировать сводный отчет AI", type="primary", use_container_width=True)
+        c_act1, c_act2 = st.columns([1, 1], gap="medium")
+        with c_act1:
+            gen_report_btn = st.button("✨ Сгенерировать актуальный AI-отчет", type="primary", use_container_width=True)
 
         if gen_report_btn or "cached_coach_report" in st.session_state:
             reporter = LLMReporterService()
             
             if gen_report_btn:
-                with st.spinner("Генерация структурированного отчета..."):
+                with st.spinner("Анализ партий и компиляция экспертного отчета..."):
                     st.session_state["cached_coach_report"] = reporter.generate_coach_report(stats)
                     st.session_state["cached_parent_report"] = reporter.generate_parent_report(stats)
 
@@ -727,9 +1298,9 @@ with tab_ai:
                     stats=stats,
                     coach_name="Тренерский штаб"
                 )
-                with pdf_col:
+                with c_act2:
                     st.download_button(
-                        label="📄 Скачать красивый PDF-отчет для родителя",
+                        label="📄 Скачать PDF-отчет для родителей",
                         data=pdf_bytes,
                         file_name=f"ChessCoach_Report_{parent_rep.child_name.replace(' ', '_')}.pdf",
                         mime="application/pdf",
@@ -738,39 +1309,80 @@ with tab_ai:
 
             st.divider()
 
-            # Режим тренера
-            if active_role == "Кабинет тренера" and coach_rep:
-                st.markdown(f"### 👔 Аудит для тренера: {coach_rep.student_name}")
-                st.markdown(f"<div class='coach-card'><b>Резюме:</b><br>{coach_rep.executive_summary}</div>", unsafe_allow_html=True)
+            # ============================================================
+            # ВАРИАНТ 1: РЕЖИМ ТРЕНЕРА
+            # ============================================================
+            if tab_ai_role == "👔 Кабинет тренера" and coach_rep:
+                st.markdown(f"#### 👔 Глубокий аудит для тренера: {coach_rep.student_name}")
                 
-                st.markdown("#### 🔍 Хронические паттерны ошибок:")
+                # Executive summary в акцентной карточке
+                render_html(f"""
+                <div class="alert-card-info">
+                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:#60A5FA;">📋 Резюме игры:</div>
+                    <div style="font-size:0.92rem; line-height:1.5;">{coach_rep.executive_summary}</div>
+                </div>
+                """)
+                
+                st.markdown("#### 🚨 Хронические паттерны ошибок:")
                 for p in coach_rep.systemic_patterns:
-                    st.markdown(f"- **[{p.severity.upper()}] {p.title}** ({p.frequency})<br>_{p.description}_", unsafe_allow_html=True)
+                    render_html(f"""
+                    <div class="alert-card-danger">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="font-weight:700; font-size:0.98rem; color:#F87171;">
+                                [{p.severity.upper()}] {p.title}
+                            </span>
+                            <span style="background:rgba(239,68,68,0.2); color:#FCA5A5; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">
+                                {p.frequency}
+                            </span>
+                        </div>
+                        <div style="font-size:0.88rem; color:#E5E7EB; line-height:1.4;">{p.description}</div>
+                    </div>
+                    """)
 
-                st.markdown(f"**⏱️ Оценка цейтнота:** {coach_rep.time_trouble_verdict}")
+                render_html(f"""
+                <div class="saas-card" style="margin-top:12px;">
+                    <div style="color:#9CA3AF; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em;">Оценка игры под флагом</div>
+                    <div style="font-size:1.0rem; font-weight:600; color:#F3F4F6; margin-top:3px;">⏱️ {coach_rep.time_trouble_verdict}</div>
+                </div>
+                """)
                 
                 st.markdown("#### 🎯 Рекомендованный план тренировок:")
-                for l in coach_rep.next_lessons_plan:
-                    st.markdown(f"- {l}")
+                for idx, lesson in enumerate(coach_rep.next_lessons_plan, 1):
+                    render_html(f"""
+                    <div class="saas-card-subtle" style="display:flex; align-items:flex-start; gap:10px;">
+                        <span style="background:rgba(59,130,246,0.15); color:#60A5FA; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">
+                            {idx}
+                        </span>
+                        <span style="font-size:0.92rem; color:#F3F4F6; padding-top:2px;">{lesson}</span>
+                    </div>
+                    """)
 
                 st.divider()
-                st.subheader("🧩 Персональное домашнее задание (Lichess Puzzle Database):")
-                st.caption("Кликабельные ссылки на открытую базу задач Lichess, сгенерированные под слабые темы ученика:")
+                st.markdown("#### 🧩 Домашнее задание (Lichess Puzzle Database)")
+                st.caption("Персональные интерактивные задачи под выявленные уязвимости ученика:")
                 
                 puzzle_recs = PuzzleGeneratorService.generate_recommendations(stats.top_tactical_weaknesses)
                 for rec in puzzle_recs:
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="puzzle-box">
-                            <b>📌 {rec['title']}</b> ({rec['puzzles_recommended']} задач)<br>
-                            <span style="color:#64748b; font-size:0.9rem;">{rec['description']}</span><br>
-                            <span style="color:#ef4444; font-size:0.85rem;">Причина: {rec['error_frequency']}</span>
+                    render_html(f"""
+                    <div class="homework-card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <div style="font-weight:700; font-size:1.0rem; color:#F3F4F6;">📌 {rec['title']}</div>
+                            <span class="kpi-badge kpi-badge-blue">{rec['puzzles_recommended']} задач</span>
                         </div>
-                        """, unsafe_allow_html=True)
-                        st.link_button(f"👉 Начать тренировку темы '{rec['title'].split('(')[0].strip()}' на Lichess", rec["url"])
+                        <div style="color:#9CA3AF; font-size:0.88rem; line-height:1.4; margin-bottom:8px;">{rec['description']}</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="color:#F87171; font-size:0.8rem; font-weight:500;">Причина: {rec['error_frequency']}</span>
+                        </div>
+                    </div>
+                    """)
+                    st.link_button(
+                        f"👉 Начать тренировку темы '{rec['title'].split('(')[0].strip()}' на Lichess", 
+                        rec["url"],
+                        use_container_width=True
+                    )
 
                 st.divider()
-                st.subheader("📋 Экспорт в мессенджер тренера:")
+                st.markdown("#### 📋 Экспорт в мессенджер тренера")
                 coach_text = (
                     f"♟️ АУДИТ ИГРЫ: {coach_rep.student_name}\n\n"
                     f"{coach_rep.executive_summary}\n\n"
@@ -780,24 +1392,46 @@ with tab_ai:
                 )
                 st.code(coach_text, language="markdown")
 
-            # Режим родителя
-            elif active_role == "Кабинет родителя" and parent_rep:
-                st.markdown(f"### 👨‍👩‍👦 Отчет для родителей: {parent_rep.child_name}")
-                st.markdown(f"<div class='parent-card'>{parent_rep.greeting_and_summary}</div>", unsafe_allow_html=True)
+            # ============================================================
+            # ВАРИАНТ 2: РЕЖИМ РОДИТЕЛЯ
+            # ============================================================
+            elif tab_ai_role == "👨‍👩‍👦 Отчет для родителей" and parent_rep:
+                st.markdown(f"#### 👨‍👩‍👦 Презентабельный отчет для родителей: {parent_rep.child_name}")
                 
-                st.markdown("#### 🏆 Главные победы и достижения недели:")
+                render_html(f"""
+                <div class="alert-card-success">
+                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:#34D399;">🌟 Успехи недели:</div>
+                    <div style="font-size:0.92rem; line-height:1.5;">{parent_rep.greeting_and_summary}</div>
+                </div>
+                """)
+                
+                st.markdown("#### 🏆 Главные достижения ребенка:")
                 for a in parent_rep.achievements:
-                    st.markdown(f"✅ {a}")
+                    render_html(f"""
+                    <div class="saas-card-subtle" style="display:flex; align-items:center; gap:8px;">
+                        <span style="color:#10B981; font-size:1.1rem;">✅</span>
+                        <span style="font-size:0.92rem; color:#F3F4F6;">{a}</span>
+                    </div>
+                    """)
 
-                st.markdown("#### 🌱 Над чем мягко поработаем дальше:")
+                st.markdown("#### 🌱 Зоны мягкого роста:")
                 for g in parent_rep.areas_for_growth:
-                    st.markdown(f"🔹 {g}")
+                    render_html(f"""
+                    <div class="saas-card-subtle" style="display:flex; align-items:center; gap:8px;">
+                        <span style="color:#3B82F6; font-size:1.1rem;">🔹</span>
+                        <span style="font-size:0.92rem; color:#F3F4F6;">{g}</span>
+                    </div>
+                    """)
 
-                st.markdown("#### 💡 Совет для родителей дома:")
-                st.info(parent_rep.home_support_advice)
+                render_html(f"""
+                <div class="alert-card-info" style="margin-top:14px;">
+                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:4px; color:#60A5FA;">💡 Совет тренера для родителей дома:</div>
+                    <div style="font-size:0.9rem; line-height:1.4;">{parent_rep.home_support_advice}</div>
+                </div>
+                """)
 
                 st.divider()
-                st.subheader("📱 Текст для отправки родителю в WhatsApp:")
+                st.markdown("#### 📱 Готовое сообщение для отправки в WhatsApp")
                 parent_text = (
                     f"{parent_rep.greeting_and_summary}\n\n"
                     f"🏆 Достижения:\n" + "\n".join([f"✅ {a}" for a in parent_rep.achievements]) + "\n\n"
