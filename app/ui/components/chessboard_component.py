@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import streamlit.components.v1 as components
 
 # Путь к HTML/JS коду компонента
@@ -14,24 +14,14 @@ def render_interactive_chessboard(
     highlight_move: Optional[Dict[str, str]] = None,
     animate_best_move: bool = False,
     best_move_uci: Optional[str] = None,
+    plies: Optional[List[Dict[str, Any]]] = None,
+    initial_ply: int = 0,
     key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Интерактивная шахматная доска с поддержкой Drag-and-Drop на базе chessboard.js и chess.js.
+    Интерактивная шахматная доска с поддержкой Drag-and-Drop и быстрым клиентским предпросмотром ходов.
     
-    Возвращает dict при совершении хода пользователем:
-    {
-        'event': 'move_played',
-        'from': 'e2',
-        'to': 'e4',
-        'san': 'e4',
-        'uci': 'e2e4',
-        'fen_after': '...',
-        'in_check': bool,
-        'is_game_over': bool,
-        'turn': 'b' | 'w',
-        'timestamp': int
-    }
+    В режиме 'plies' позволяет мгновенно перемещаться по ходам партии без сетевых раундтрипов и мерцания.
     """
     return _interactive_chessboard(
         fen=fen,
@@ -40,6 +30,8 @@ def render_interactive_chessboard(
         highlight_move=highlight_move,
         animate_best_move=animate_best_move,
         best_move_uci=best_move_uci,
+        plies=plies,
+        initial_ply=initial_ply,
         key=key,
         default=None,
     )

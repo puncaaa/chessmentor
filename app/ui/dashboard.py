@@ -382,6 +382,17 @@ CUSTOM_CSS = """
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         border-radius: 8px !important;
     }
+
+    /* Жесткие размеры контейнера доски для предотвращения схлопывания и мерцания (Anti-flicker) */
+    .chessboard-wrapper,
+    div[data-testid="stCustomComponentV1"],
+    iframe[title*="interactive_chessboard"] {
+        min-height: 480px !important;
+        min-width: 480px !important;
+        aspect-ratio: 1/1 !important;
+        contain: layout !important;
+        border: none !important;
+    }
 </style>
 """
 render_html(CUSTOM_CSS)
@@ -392,6 +403,7 @@ init_db()
 # ============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ============================================================================
+@st.cache_data
 def render_chessboard_svg(
     fen: str,
     played_uci: Optional[str] = None,
@@ -447,6 +459,9 @@ def parse_game_plies(pgn_str: str, error_events: List[ChessErrorEvent]) -> List[
             "move_number": 0,
             "is_white": True,
             "eval_text": "0.0 • Начальная расстановка фигур",
+            "is_error": False,
+            "error_severity": None,
+            "error_cpl": 0,
             "error": None
         }]
         
@@ -477,7 +492,10 @@ def parse_game_plies(pgn_str: str, error_events: List[ChessErrorEvent]) -> List[
                 "move_number": move_num,
                 "is_white": is_white,
                 "eval_text": eval_text,
-                "error": err
+                "is_error": bool(err),
+                "error_severity": err.severity if err else None,
+                "error_cpl": err.centipawn_loss if err else 0,
+                "error": None
             })
             ply_idx += 1
             
@@ -990,76 +1008,43 @@ with tab_board:
                     )
 
             # ================================================================
-            # РЕЖИМ 2: ПРОСМОТР ВСЕЙ ПАРТИИ (WALKTHROUGH С ОЦЕНКОЙ ХОДОВ)
+            # РЕЖИМ 2: ПРОСМОТР ВСЕЙ ПАРТИИ (FAST CLIENT-SIDE PREVIEW)
             # ================================================================
             else:
                 plies = parse_game_plies(selected_game.pgn, error_events)
-                ply_key = f"ply_{selected_game.id}"
-                if ply_key not in st.session_state:
-                    st.session_state[ply_key] = 0
-                
-                cur_ply = max(0, min(len(plies) - 1, st.session_state[ply_key]))
-                st.session_state[ply_key] = cur_ply
-                ply_data = plies[cur_ply]
 
-                # Отрисовка интерактивной доски для текущего полухода
+                # Клиентский предпросмотр ходов без перезапуска Streamlit (0ms latency, zero flicker)
                 render_interactive_chessboard(
-                    fen=ply_data["fen"],
+                    fen=plies[0]["fen"] if plies else chess.STARTING_FEN,
                     orientation=selected_game.student_color,
                     allow_moves=False,
-                    key=f"walk_board_{selected_game.id}_{cur_ply}"
+                    plies=plies,
+                    initial_ply=0,
+                    key=f"walk_board_{selected_game.id}"
                 )
 
-                # Кнопки пошаговой навигации (|<<, <, >, >>)
-                n1, n2, n3, n4 = st.columns(4)
-                with n1:
-                    if st.button("⏮️ В начало", use_container_width=True, key=f"btn_first_{selected_game.id}"):
-                        st.session_state[ply_key] = 0
-                        st.rerun()
-                with n2:
-                    if st.button("◀️ Назад", use_container_width=True, key=f"btn_prev_{selected_game.id}"):
-                        st.session_state[ply_key] = max(0, cur_ply - 1)
-                        st.rerun()
-                with n3:
-                    if st.button("Вперед ▶️", use_container_width=True, key=f"btn_next_{selected_game.id}"):
-                        st.session_state[ply_key] = min(len(plies) - 1, cur_ply + 1)
-                        st.rerun()
-                with n4:
-                    if st.button("В конец ⏭️", use_container_width=True, key=f"btn_last_{selected_game.id}"):
-                        st.session_state[ply_key] = len(plies) - 1
-                        st.rerun()
-
-                # Слайдер перемотки ходов (связан с ply_key)
-                st.slider(
-                    "Шкала ходов партии",
-                    min_value=0,
-                    max_value=len(plies) - 1,
-                    key=ply_key
-                )
-
-                # Информационная плашка с оценкой хода движком в B2B SaaS стиле
-                is_err = ply_data.get("error") is not None
-                card_class = "alert-card-danger" if is_err else "saas-card"
-                accent_color = "#EF4444" if is_err else "#3B82F6"
-
-                render_html(f"""
-                <div class="{card_class}" style="margin-top:4px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div style="font-weight:700; font-size:1.05rem; color:#F3F4F6;">
-                            Ход: {ply_data['san']} 
-                            <span style="font-size:0.85rem; color:#9CA3AF; font-weight:400; margin-left:6px;">
-                                ({'Белые ⚪' if ply_data['is_white'] else 'Черные ⚫'})
-                            </span>
-                        </div>
-                        <span style="background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:6px; font-size:0.75rem; color:#9CA3AF;">
-                            Полуход #{cur_ply} / {len(plies)-1}
-                        </span>
-                    </div>
-                    <div style="color:{accent_color}; font-weight:600; font-size:0.92rem; margin-top:6px;">
-                        Оценка позиции: {ply_data['eval_text']}
-                    </div>
-                </div>
+                # Глобальный слушатель клавиатуры для навигации стрелками с любой части страницы
+                render_html("""
+                <script>
+                (function() {
+                    if (!window._chessNavScriptLoaded) {
+                        window._chessNavScriptLoaded = true;
+                        window.addEventListener('keydown', function(e) {
+                            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+                                const iframes = document.querySelectorAll('iframe[title*="interactive_chessboard"]');
+                                iframes.forEach(function(f) {
+                                    if (f && f.contentWindow) {
+                                        f.contentWindow.postMessage({ type: 'nav_key', key: e.key }, '*');
+                                    }
+                                });
+                            }
+                        });
+                    }
+                })();
+                </script>
                 """)
+
+                st.caption("⚡ **Мгновенная навигация:** используйте кнопки на доске, слайдер или стрелки на клавиатуре (← / →, Home / End). Фигуры перемещаются мгновенно на клиенте.")
 
 
 # ----------------------------------------------------------------------------

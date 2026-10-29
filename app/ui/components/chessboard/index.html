@@ -1,21 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <title>Interactive Chessboard</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
   <style>
-    body {
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
       margin: 0;
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      padding: 0;
       background-color: transparent;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
     }
+
+    /* Жесткие размеры контейнера для предотвращения мерцания (Anti-flicker) */
+    .anti-flicker-wrapper {
+      min-height: 480px;
+      min-width: 480px;
+      aspect-ratio: 1/1;
+      contain: layout;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      width: 100%;
+      padding: 4px;
+    }
+
     #board-container {
       position: relative;
       width: 420px;
@@ -24,16 +42,25 @@
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       overflow: hidden;
+      flex-shrink: 0;
     }
+
     #board {
       width: 420px;
       height: 420px;
     }
+
     .highlight-from {
       background-color: rgba(239, 68, 68, 0.5) !important;
     }
     .highlight-to {
       background-color: rgba(239, 68, 68, 0.7) !important;
+    }
+    .highlight-move-from {
+      background-color: rgba(59, 130, 246, 0.45) !important;
+    }
+    .highlight-move-to {
+      background-color: rgba(59, 130, 246, 0.65) !important;
     }
     .highlight-best-from {
       background-color: rgba(16, 185, 129, 0.5) !important;
@@ -44,6 +71,8 @@
     .highlight-selected {
       background-color: rgba(245, 158, 11, 0.6) !important;
     }
+
+    /* Статус хода в режиме тренажера */
     .turn-indicator {
       margin-top: 10px;
       font-size: 13px;
@@ -51,14 +80,157 @@
       color: #94a3b8;
       letter-spacing: 0.02em;
     }
+
+    /* Клиентская панель навигации по ходам партии (Fast Preview) */
+    #nav-controls {
+      width: 420px;
+      margin-top: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Слайдер полуходов */
+    .slider-row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      padding: 0 2px;
+    }
+    .custom-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+      cursor: pointer;
+    }
+    .custom-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #3B82F6;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+      transition: transform 0.1s ease;
+    }
+    .custom-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    /* Кнопки навигации |<< < > >> */
+    .buttons-row {
+      display: flex;
+      gap: 6px;
+      width: 100%;
+    }
+    .nav-btn {
+      flex: 1;
+      background-color: #161F30;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #F3F4F6;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+      user-select: none;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background-color: #1E293B;
+      border-color: rgba(59, 130, 246, 0.5);
+      color: #FFFFFF;
+    }
+    .nav-btn:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    /* Информационная плашка хода */
+    .ply-card {
+      background-color: #161F30;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 8px 12px;
+      transition: border-color 0.2s ease, background-color 0.2s ease;
+    }
+    .ply-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ply-card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #F3F4F6;
+    }
+    .ply-card-color {
+      font-size: 11px;
+      color: #9CA3AF;
+      font-weight: 400;
+      margin-left: 4px;
+    }
+    .ply-card-counter {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #9CA3AF;
+      font-weight: 500;
+    }
+    .ply-card-eval {
+      font-size: 12px;
+      font-weight: 600;
+      color: #38BDF8;
+      margin-top: 4px;
+      line-height: 1.3;
+    }
   </style>
 </head>
 <body>
 
-  <div id="board-container">
-    <div id="board"></div>
+  <div class="anti-flicker-wrapper">
+    <div id="board-container">
+      <div id="board"></div>
+    </div>
+    
+    <!-- Индикатор в режиме тренажера -->
+    <div id="status" class="turn-indicator">Загрузка доски...</div>
+
+    <!-- Клиентские контролы в режиме walkthrough -->
+    <div id="nav-controls">
+      <div class="slider-row">
+        <input type="range" id="ply-slider" min="0" max="0" value="0" class="custom-slider" title="Перемотка ходов партии">
+      </div>
+      <div class="buttons-row">
+        <button id="btn-first" class="nav-btn" title="В начало (Home)">⏮️ Начало</button>
+        <button id="btn-prev" class="nav-btn" title="Назад (←)">◀️ Назад</button>
+        <button id="btn-next" class="nav-btn" title="Вперед (→)">Вперед ▶️</button>
+        <button id="btn-last" class="nav-btn" title="В конец (End)">Конец ⏭️</button>
+      </div>
+      <div id="ply-card" class="ply-card">
+        <div class="ply-card-header">
+          <div class="ply-card-title">
+            <span id="ply-san">Старт партии</span>
+            <span id="ply-color" class="ply-card-color">(Белые ⚪)</span>
+          </div>
+          <span id="ply-counter" class="ply-card-counter">0 / 0</span>
+        </div>
+        <div id="ply-eval" class="ply-card-eval">0.0 • Начальная расстановка фигур</div>
+      </div>
+    </div>
   </div>
-  <div id="status" class="turn-indicator">Загрузка доски...</div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -86,10 +258,13 @@
     let currentFen = null;
     let currentOrientation = 'white';
     let allowMoves = true;
-    let activePlayerColor = 'w';
+    
+    // Переменные для режима быстрого клиентского предпросмотра (Fast Preview)
+    let gamePlies = null;
+    let currentPly = 0;
 
     function clearHighlights() {
-      $('#board .square-55d63').removeClass('highlight-from highlight-to highlight-best-from highlight-best-to highlight-selected');
+      $('#board .square-55d63').removeClass('highlight-from highlight-to highlight-move-from highlight-move-to highlight-best-from highlight-best-to highlight-selected');
     }
 
     function highlightMove(from, to, type) {
@@ -98,14 +273,17 @@
         if (type === 'best') {
           $('#board .square-' + from).addClass('highlight-best-from');
           $('#board .square-' + to).addClass('highlight-best-to');
-        } else {
+        } else if (type === 'error') {
           $('#board .square-' + from).addClass('highlight-from');
           $('#board .square-' + to).addClass('highlight-to');
+        } else {
+          $('#board .square-' + from).addClass('highlight-move-from');
+          $('#board .square-' + to).addClass('highlight-move-to');
         }
       }
     }
 
-    function updateStatus() {
+    function updateTrainerStatus() {
       let statusText = '';
       let moveColor = game.turn() === 'b' ? 'Черные' : 'Белые';
 
@@ -122,10 +300,54 @@
       $('#status').text(statusText);
     }
 
+    // Мгновенный переход к полуходу на стороне клиента (0ms latency, 60fps)
+    function goToPly(index, animate) {
+      if (!gamePlies || gamePlies.length === 0) return;
+      index = Math.max(0, Math.min(gamePlies.length - 1, index));
+      currentPly = index;
+      
+      const ply = gamePlies[currentPly];
+      currentFen = ply.fen;
+      game.load(ply.fen);
+
+      // Мгновенная отрисовка позиции на доске
+      if (board) {
+        board.position(ply.fen, animate === true);
+      }
+
+      // Подсветка хода
+      clearHighlights();
+      if (ply.uci && ply.uci.length >= 4) {
+        const from = ply.uci.substring(0, 2);
+        const to = ply.uci.substring(2, 4);
+        highlightMove(from, to, ply.is_error ? 'error' : 'normal');
+      }
+
+      // Обновление UI элементов на клиенте
+      $('#ply-slider').val(currentPly);
+      $('#ply-san').text(ply.san || 'Ход');
+      $('#ply-color').text(ply.is_white ? '(Белые ⚪)' : '(Черные ⚫)');
+      $('#ply-counter').text(currentPly + ' / ' + (gamePlies.length - 1));
+      
+      const evalEl = $('#ply-eval');
+      evalEl.text(ply.eval_text || '');
+      
+      const cardEl = $('#ply-card');
+      if (ply.is_error) {
+        evalEl.css('color', '#F87171');
+        cardEl.css('border-color', 'rgba(239, 68, 68, 0.4)').css('background', 'rgba(239, 68, 68, 0.08)');
+      } else {
+        evalEl.css('color', '#38BDF8');
+        cardEl.css('border-color', 'rgba(255, 255, 255, 0.08)').css('background', '#161F30');
+      }
+
+      // Кнопки активности
+      $('#btn-first, #btn-prev').prop('disabled', currentPly === 0);
+      $('#btn-next, #btn-last').prop('disabled', currentPly === gamePlies.length - 1);
+    }
+
     function onDragStart(source, piece, position, orientation) {
       if (!allowMoves || game.game_over()) return false;
-
-      // Разрешаем ходить только фигурами стороны, чей сейчас ход
       if ((game.turn() === 'w' && piece.search(/^b/) !== -1) ||
           (game.turn() === 'b' && piece.search(/^w/) !== -1)) {
         return false;
@@ -134,20 +356,17 @@
     }
 
     function onDrop(source, target) {
-      // Проверяем легальность хода через chess.js
       const move = game.move({
         from: source,
         to: target,
-        promotion: 'q' // авто-превращение в ферзя для простоты
+        promotion: 'q'
       });
 
-      // Нелегальный ход — возвращаем фигуру назад
       if (move === null) return 'snapback';
 
-      updateStatus();
+      updateTrainerStatus();
       highlightMove(source, target, 'user');
 
-      // Отправляем сделанный ход в Python / Streamlit
       setComponentValue({
         event: 'move_played',
         from: source,
@@ -172,7 +391,7 @@
       game.load(currentFen);
 
       const config = {
-        draggable: true,
+        draggable: allowMoves,
         position: currentFen,
         orientation: currentOrientation,
         pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
@@ -182,18 +401,61 @@
       };
 
       board = Chessboard('board', config);
-      updateStatus();
-      setFrameHeight(460);
+      updateTrainerStatus();
     }
 
-    // Слушатель событий от Streamlit Python
+    // Слушатели кликов контролов навигации
+    $('#btn-first').on('click', function() { goToPly(0, false); });
+    $('#btn-prev').on('click', function() { goToPly(currentPly - 1, true); });
+    $('#btn-next').on('click', function() { goToPly(currentPly + 1, true); });
+    $('#btn-last').on('click', function() { goToPly(gamePlies ? gamePlies.length - 1 : 0, false); });
+    $('#ply-slider').on('input', function() { goToPly(parseInt($(this).val()), false); });
+
+    // Клавиатурная навигация внутри iframe
+    window.addEventListener('keydown', function(e) {
+      if (!gamePlies || gamePlies.length === 0) return;
+      if (e.key === 'ArrowLeft' || e.key === 'Left') {
+        e.preventDefault();
+        goToPly(currentPly - 1, true);
+      } else if (e.key === 'ArrowRight' || e.key === 'Right') {
+        e.preventDefault();
+        goToPly(currentPly + 1, true);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        goToPly(0, false);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        goToPly(gamePlies.length - 1, false);
+      }
+    });
+
+    // Слушатель событий от Streamlit Python и родительского окна
     window.addEventListener("message", function(event) {
-      if (!event.data || event.data.type !== "streamlit:render") return;
+      if (!event.data) return;
+
+      // 1. Быстрые клавиши от родительского окна (Streamlit)
+      if (event.data.type === 'nav_key') {
+        if (!gamePlies || gamePlies.length === 0) return;
+        const key = event.data.key;
+        if (key === 'ArrowLeft' || key === 'Left') {
+          goToPly(currentPly - 1, true);
+        } else if (key === 'ArrowRight' || key === 'Right') {
+          goToPly(currentPly + 1, true);
+        } else if (key === 'Home') {
+          goToPly(0, false);
+        } else if (key === 'End') {
+          goToPly(gamePlies.length - 1, false);
+        }
+        return;
+      }
+
+      // 2. Стандартный рендеринг Streamlit
+      if (event.data.type !== "streamlit:render") return;
 
       const args = event.data.args || {};
-      const targetFen = args.fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
       const orientation = args.orientation || 'white';
       allowMoves = args.allow_moves !== undefined ? args.allow_moves : true;
+      const targetFen = args.fen || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
       if (!board) {
         initBoard(targetFen, orientation);
@@ -201,47 +463,62 @@
         if (board.orientation() !== orientation) {
           board.orientation(orientation);
         }
+      }
+
+      // РЕЖИМ А: Walkthrough с быстрой клиентской навигацией (Fast Preview)
+      if (args.plies && args.plies.length > 0) {
+        gamePlies = args.plies;
+        $('#status').hide();
+        $('#nav-controls').css('display', 'flex');
+        
+        $('#ply-slider').attr('max', gamePlies.length - 1);
+        const initIdx = args.initial_ply !== undefined ? args.initial_ply : 0;
+        goToPly(initIdx, false);
+        setFrameHeight(560);
+      } 
+      // РЕЖИМ Б: Интерактивный тренажер ошибки (Drag-and-Drop)
+      else {
+        gamePlies = null;
+        $('#nav-controls').hide();
+        $('#status').show();
+
         if (currentFen !== targetFen) {
           currentFen = targetFen;
           game.load(targetFen);
           board.position(targetFen, false);
           clearHighlights();
-          updateStatus();
+          updateTrainerStatus();
         }
-      }
 
-      // Подсветка стрелок/ходов из Python
-      if (args.highlight_move) {
-        const hm = args.highlight_move;
-        highlightMove(hm.from, hm.to, hm.type || 'error');
-      }
-
-      // Анимация показа лучшего хода при клике на "Показать правильный ход"
-      if (args.animate_best_move && args.best_move_uci) {
-        const uci = args.best_move_uci;
-        const from = uci.substring(0, 2);
-        const to = uci.substring(2, 4);
-        const promo = uci.length > 4 ? uci.substring(4, 5) : 'q';
-        
-        const bestMoveObj = game.move({ from: from, to: to, promotion: promo });
-        if (bestMoveObj) {
-          board.position(game.fen(), true);
-          highlightMove(from, to, 'best');
-          updateStatus();
-          setComponentValue({
-            event: 'best_move_shown',
-            uci: uci,
-            san: bestMoveObj.san,
-            fen_after: game.fen(),
-            timestamp: Date.now()
-          });
+        if (args.highlight_move) {
+          const hm = args.highlight_move;
+          highlightMove(hm.from, hm.to, hm.type || 'error');
         }
-      }
 
-      setFrameHeight(460);
+        if (args.animate_best_move && args.best_move_uci) {
+          const uci = args.best_move_uci;
+          const from = uci.substring(0, 2);
+          const to = uci.substring(2, 4);
+          const promo = uci.length > 4 ? uci.substring(4, 5) : 'q';
+          
+          const bestMoveObj = game.move({ from: from, to: to, promotion: promo });
+          if (bestMoveObj) {
+            board.position(game.fen(), true);
+            highlightMove(from, to, 'best');
+            updateTrainerStatus();
+            setComponentValue({
+              event: 'best_move_shown',
+              uci: uci,
+              san: bestMoveObj.san,
+              fen_after: game.fen(),
+              timestamp: Date.now()
+            });
+          }
+        }
+        setFrameHeight(480);
+      }
     });
 
-    // Уведомляем Streamlit, что компонент готов
     sendMessage("streamlit:componentReady", { apiVersion: 1 });
   </script>
 </body>
