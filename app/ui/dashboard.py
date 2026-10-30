@@ -55,112 +55,264 @@ def render_html(html_str: str):
     st.html(html_str)
 
 
-CUSTOM_CSS = """
+# Определение темы оформления (Dark / Light)
+theme_choice = st.session_state.get("app_theme_choice", "🌙 Темная")
+is_dark = "Светлая" not in theme_choice
+active_theme_str = "dark" if is_dark else "light"
+
+
+def get_theme_css(is_dark: bool) -> str:
+    """Генерация дизайн-системы Linear / Tailwind Slate для темной и светлой тем."""
+    if is_dark:
+        vars_css = """
+        --bg-page: #0B0F17;
+        --bg-sidebar: #0D131F;
+        --bg-card: #161F30;
+        --bg-card-subtle: rgba(255, 255, 255, 0.03);
+        --border-card: rgba(255, 255, 255, 0.08);
+        --border-card-hover: rgba(255, 255, 255, 0.16);
+        --border-subtle: rgba(255, 255, 255, 0.06);
+        --border-divider: rgba(255, 255, 255, 0.08);
+        --text-main: #F3F4F6;
+        --text-muted: #9CA3AF;
+        --text-subtle: #6B7280;
+        --code-bg: #0F172A;
+        --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
+        --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.4);
+        --tab-bg-active: rgba(59, 130, 246, 0.12);
+        --tab-border-active: rgba(59, 130, 246, 0.3);
+        --btn-sec-bg: #161F30;
+        --btn-sec-border: rgba(255, 255, 255, 0.1);
+        --btn-sec-text: #E5E7EB;
+        --btn-sec-hover-bg: #1E293B;
+        --alert-danger-bg: rgba(239, 68, 68, 0.06);
+        --alert-danger-border: rgba(239, 68, 68, 0.25);
+        --alert-danger-text: #F3F4F6;
+        --alert-danger-title: #F87171;
+        --alert-info-bg: rgba(59, 130, 246, 0.06);
+        --alert-info-border: rgba(59, 130, 246, 0.25);
+        --alert-info-text: #F3F4F6;
+        --alert-info-title: #60A5FA;
+        --alert-success-bg: rgba(16, 185, 129, 0.06);
+        --alert-success-border: rgba(16, 185, 129, 0.25);
+        --alert-success-text: #F3F4F6;
+        --alert-success-title: #34D399;
+        --badge-blunder-bg: rgba(239, 68, 68, 0.15);
+        --badge-blunder-text: #F87171;
+        --badge-blunder-border: rgba(239, 68, 68, 0.35);
+        --badge-mistake-bg: rgba(245, 158, 11, 0.15);
+        --badge-mistake-text: #FBBF24;
+        --badge-mistake-border: rgba(245, 158, 11, 0.35);
+        --badge-inaccuracy-bg: rgba(56, 189, 248, 0.15);
+        --badge-inaccuracy-text: #38BDF8;
+        --badge-inaccuracy-border: rgba(56, 189, 248, 0.35);
+        --badge-win-bg: rgba(16, 185, 129, 0.15);
+        --badge-win-text: #34D399;
+        --badge-win-border: rgba(16, 185, 129, 0.3);
+        --badge-loss-bg: rgba(239, 68, 68, 0.15);
+        --badge-loss-text: #F87171;
+        --badge-loss-border: rgba(239, 68, 68, 0.3);
+        --badge-draw-bg: rgba(156, 163, 175, 0.15);
+        --badge-draw-text: #9CA3AF;
+        --badge-draw-border: rgba(156, 163, 175, 0.3);
+        --kpi-blue-bg: rgba(59, 130, 246, 0.15);
+        --kpi-blue-text: #60A5FA;
+        --kpi-blue-border: rgba(59, 130, 246, 0.3);
+        --kpi-green-bg: rgba(16, 185, 129, 0.15);
+        --kpi-green-text: #34D399;
+        --kpi-green-border: rgba(16, 185, 129, 0.3);
+        --kpi-amber-bg: rgba(245, 158, 11, 0.15);
+        --kpi-amber-text: #FBBF24;
+        --kpi-amber-border: rgba(245, 158, 11, 0.3);
+        --kpi-red-bg: rgba(239, 68, 68, 0.15);
+        --kpi-red-text: #F87171;
+        --kpi-red-border: rgba(239, 68, 68, 0.3);
+        --tab-text-inactive: #9CA3AF;
+        """
+    else:
+        vars_css = """
+        --bg-page: #F8FAFC;
+        --bg-sidebar: #FFFFFF;
+        --bg-card: #FFFFFF;
+        --bg-card-subtle: #F1F5F9;
+        --border-card: #E2E8F0;
+        --border-card-hover: #CBD5E1;
+        --border-subtle: #E2E8F0;
+        --border-divider: #E2E8F0;
+        --text-main: #0F172A;
+        --text-muted: #475569;
+        --text-subtle: #94A3B8;
+        --code-bg: #F1F5F9;
+        --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
+        --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
+        --tab-bg-active: rgba(59, 130, 246, 0.08);
+        --tab-border-active: rgba(59, 130, 246, 0.3);
+        --tab-text-inactive: #475569;
+        --btn-sec-bg: #FFFFFF;
+        --btn-sec-border: #CBD5E1;
+        --btn-sec-text: #1E293B;
+        --btn-sec-hover-bg: #F8FAFC;
+        --alert-danger-bg: #FEF2F2;
+        --alert-danger-border: #FECACA;
+        --alert-danger-text: #7F1D1D;
+        --alert-danger-title: #DC2626;
+        --alert-info-bg: #EFF6FF;
+        --alert-info-border: #BFDBFE;
+        --alert-info-text: #1E3A8A;
+        --alert-info-title: #2563EB;
+        --alert-success-bg: #F0FDF4;
+        --alert-success-border: #BBF7D0;
+        --alert-success-text: #14532D;
+        --alert-success-title: #16A34A;
+        --badge-blunder-bg: #FEE2E2;
+        --badge-blunder-text: #DC2626;
+        --badge-blunder-border: #FCA5A5;
+        --badge-mistake-bg: #FEF3C7;
+        --badge-mistake-text: #D97706;
+        --badge-mistake-border: #FCD34D;
+        --badge-inaccuracy-bg: #E0F2FE;
+        --badge-inaccuracy-text: #0284C7;
+        --badge-inaccuracy-border: #BAE6FD;
+        --badge-win-bg: #DCFCE7;
+        --badge-win-text: #16A34A;
+        --badge-win-border: #86EFAC;
+        --badge-loss-bg: #FEE2E2;
+        --badge-loss-text: #DC2626;
+        --badge-loss-border: #FCA5A5;
+        --badge-draw-bg: #F1F5F9;
+        --badge-draw-text: #475569;
+        --badge-draw-border: #CBD5E1;
+        --kpi-blue-bg: #EFF6FF;
+        --kpi-blue-text: #2563EB;
+        --kpi-blue-border: #BFDBFE;
+        --kpi-green-bg: #F0FDF4;
+        --kpi-green-text: #16A34A;
+        --kpi-green-border: #BBF7D0;
+        --kpi-amber-bg: #FFFBEB;
+        --kpi-amber-text: #D97706;
+        --kpi-amber-border: #FDE68A;
+        --kpi-red-bg: #FEF2F2;
+        --kpi-red-text: #DC2626;
+        --kpi-red-border: #FECACA;
+        """
+
+    return f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-    /* Базовая типографика и тема */
-    html, body, [class*="css"], .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-        background-color: #0B0F17 !important;
-        color: #F3F4F6 !important;
-    }
+    :root {{
+        {vars_css}
+    }}
 
-    /* Аккуратные заголовки B2B SaaS (Linear-style) */
-    h1 {
+    /* Бесшовный заголовок Streamlit */
+    header[data-testid="stHeader"] {{
+        background: transparent !important;
+    }}
+
+    /* Базовая типографика и тема */
+    html, body, [class*="css"], .stApp {{
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+        background-color: var(--bg-page) !important;
+        color: var(--text-main) !important;
+    }}
+
+    /* Стилизация заголовков Linear SaaS */
+    h1 {{
         font-size: 1.5rem !important;
         font-weight: 700 !important;
-        color: #F3F4F6 !important;
+        color: var(--text-main) !important;
         letter-spacing: -0.02em !important;
         margin-bottom: 0.5rem !important;
-    }
-    h2 {
+    }}
+    h2 {{
         font-size: 1.25rem !important;
         font-weight: 600 !important;
-        color: #F3F4F6 !important;
+        color: var(--text-main) !important;
         letter-spacing: -0.01em !important;
         margin-top: 0.75rem !important;
         margin-bottom: 0.5rem !important;
-    }
-    h3 {
+    }}
+    h3 {{
         font-size: 1.1rem !important;
         font-weight: 600 !important;
-        color: #E5E7EB !important;
+        color: var(--text-main) !important;
         margin-bottom: 0.4rem !important;
-    }
-    h4 {
+    }}
+    h4 {{
         font-size: 0.95rem !important;
         font-weight: 600 !important;
-        color: #9CA3AF !important;
+        color: var(--text-muted) !important;
         text-transform: uppercase !important;
         letter-spacing: 0.05em !important;
-    }
+    }}
 
-    /* Карточки и контейнеры Tailwind Slate */
-    .saas-card {
-        background-color: #161F30;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+    /* Карточки и контейнеры */
+    .saas-card {{
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
         border-radius: 12px;
         padding: 18px 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: var(--shadow-card);
         margin-bottom: 14px;
-        color: #F3F4F6;
-    }
+        color: var(--text-main);
+    }}
 
-    .saas-card-subtle {
-        background-color: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.06);
+    .saas-card-subtle {{
+        background-color: var(--bg-card-subtle) !important;
+        border: 1px solid var(--border-subtle) !important;
         border-radius: 10px;
         padding: 14px 16px;
         margin-bottom: 12px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
+        color: var(--text-main);
+    }}
 
     /* KPI блоки */
-    .kpi-card {
-        background-color: #161F30;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+    .kpi-card {{
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
         border-radius: 12px;
         padding: 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        box-shadow: var(--shadow-card);
         display: flex;
         flex-direction: column;
         justify-content: space-between;
         min-height: 130px;
-        transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-    .kpi-card:hover {
+        transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }}
+    .kpi-card:hover {{
         transform: translateY(-2px);
-        border-color: rgba(255, 255, 255, 0.16);
-    }
-    .kpi-header {
+        border-color: var(--border-card-hover) !important;
+        box-shadow: var(--shadow-card-hover);
+    }}
+    .kpi-header {{
         display: flex;
         align-items: center;
         justify-content: space-between;
         margin-bottom: 8px;
-    }
-    .kpi-title {
+    }}
+    .kpi-title {{
         font-size: 0.8rem;
         font-weight: 600;
-        color: #9CA3AF;
+        color: var(--text-muted);
         text-transform: uppercase;
         letter-spacing: 0.06em;
-    }
-    .kpi-icon {
+    }}
+    .kpi-icon {{
         font-size: 1.25rem;
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--bg-card-subtle);
+        border: 1px solid var(--border-subtle);
         padding: 6px;
         border-radius: 8px;
-    }
-    .kpi-value {
+    }}
+    .kpi-value {{
         font-size: 1.85rem;
         font-weight: 700;
-        color: #F3F4F6;
+        color: var(--text-main);
         letter-spacing: -0.02em;
         line-height: 1.1;
         margin-bottom: 8px;
-    }
-    .kpi-badge {
+    }}
+    .kpi-badge {{
         display: inline-flex;
         align-items: center;
         gap: 5px;
@@ -169,145 +321,151 @@ CUSTOM_CSS = """
         font-size: 0.75rem;
         font-weight: 600;
         width: fit-content;
-    }
-    .kpi-badge-blue { background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }
-    .kpi-badge-green { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); }
-    .kpi-badge-amber { background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); }
-    .kpi-badge-red { background: rgba(239, 68, 68, 0.15); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+    }}
+    .kpi-badge-blue {{ background: var(--kpi-blue-bg); color: var(--kpi-blue-text); border: 1px solid var(--kpi-blue-border); }}
+    .kpi-badge-green {{ background: var(--kpi-green-bg); color: var(--kpi-green-text); border: 1px solid var(--kpi-green-border); }}
+    .kpi-badge-amber {{ background: var(--kpi-amber-bg); color: var(--kpi-amber-text); border: 1px solid var(--kpi-amber-border); }}
+    .kpi-badge-red {{ background: var(--kpi-red-bg); color: var(--kpi-red-text); border: 1px solid var(--kpi-red-border); }}
 
     /* Бейджи ошибок и статусов */
-    .badge-blunder {
-        background-color: rgba(239, 68, 68, 0.15);
-        color: #F87171;
-        border: 1px solid rgba(239, 68, 68, 0.35);
+    .badge-blunder {{
+        background-color: var(--badge-blunder-bg);
+        color: var(--badge-blunder-text);
+        border: 1px solid var(--badge-blunder-border);
         padding: 3px 8px;
         border-radius: 6px;
         font-weight: 700;
         font-size: 0.75rem;
         letter-spacing: 0.05em;
-    }
-    .badge-mistake {
-        background-color: rgba(245, 158, 11, 0.15);
-        color: #FBBF24;
-        border: 1px solid rgba(245, 158, 11, 0.35);
+    }}
+    .badge-mistake {{
+        background-color: var(--badge-mistake-bg);
+        color: var(--badge-mistake-text);
+        border: 1px solid var(--badge-mistake-border);
         padding: 3px 8px;
         border-radius: 6px;
         font-weight: 700;
         font-size: 0.75rem;
         letter-spacing: 0.05em;
-    }
-    .badge-inaccuracy {
-        background-color: rgba(56, 189, 248, 0.15);
-        color: #38BDF8;
-        border: 1px solid rgba(56, 189, 248, 0.35);
+    }}
+    .badge-inaccuracy {{
+        background-color: var(--badge-inaccuracy-bg);
+        color: var(--badge-inaccuracy-text);
+        border: 1px solid var(--badge-inaccuracy-border);
         padding: 3px 8px;
         border-radius: 6px;
         font-weight: 700;
         font-size: 0.75rem;
         letter-spacing: 0.05em;
-    }
+    }}
 
     /* Бейджи исхода партии */
-    .badge-win {
-        background: rgba(16, 185, 129, 0.15);
-        color: #34D399;
-        border: 1px solid rgba(16, 185, 129, 0.3);
+    .badge-win {{
+        background: var(--badge-win-bg);
+        color: var(--badge-win-text);
+        border: 1px solid var(--badge-win-border);
         padding: 3px 9px;
         border-radius: 6px;
         font-weight: 600;
         font-size: 0.8rem;
-    }
-    .badge-loss {
-        background: rgba(239, 68, 68, 0.15);
-        color: #F87171;
-        border: 1px solid rgba(239, 68, 68, 0.3);
+    }}
+    .badge-loss {{
+        background: var(--badge-loss-bg);
+        color: var(--badge-loss-text);
+        border: 1px solid var(--badge-loss-border);
         padding: 3px 9px;
         border-radius: 6px;
         font-weight: 600;
         font-size: 0.8rem;
-    }
-    .badge-draw {
-        background: rgba(156, 163, 175, 0.15);
-        color: #9CA3AF;
-        border: 1px solid rgba(156, 163, 175, 0.3);
+    }}
+    .badge-draw {{
+        background: var(--badge-draw-bg);
+        color: var(--badge-draw-text);
+        border: 1px solid var(--badge-draw-border);
         padding: 3px 9px;
         border-radius: 6px;
         font-weight: 600;
         font-size: 0.8rem;
-    }
+    }}
 
     /* Карточки алертов (Отчеты AI, хронические паттерны) */
-    .alert-card-danger {
-        background: rgba(239, 68, 68, 0.06);
-        border: 1px solid rgba(239, 68, 68, 0.25);
-        border-left: 4px solid #EF4444;
+    .alert-card-danger {{
+        background: var(--alert-danger-bg) !important;
+        border: 1px solid var(--alert-danger-border) !important;
+        border-left: 4px solid #EF4444 !important;
         border-radius: 8px;
         padding: 14px 18px;
         margin-bottom: 12px;
-        color: #F3F4F6;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-    }
-    .alert-card-info {
-        background: rgba(59, 130, 246, 0.06);
-        border: 1px solid rgba(59, 130, 246, 0.25);
-        border-left: 4px solid #3B82F6;
+        color: var(--alert-danger-text) !important;
+        box-shadow: var(--shadow-card);
+    }}
+    .alert-card-info {{
+        background: var(--alert-info-bg) !important;
+        border: 1px solid var(--alert-info-border) !important;
+        border-left: 4px solid #3B82F6 !important;
         border-radius: 8px;
         padding: 14px 18px;
         margin-bottom: 12px;
-        color: #F3F4F6;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-    }
-    .alert-card-success {
-        background: rgba(16, 185, 129, 0.06);
-        border: 1px solid rgba(16, 185, 129, 0.25);
-        border-left: 4px solid #10B981;
+        color: var(--alert-info-text) !important;
+        box-shadow: var(--shadow-card);
+    }}
+    .alert-card-success {{
+        background: var(--alert-success-bg) !important;
+        border: 1px solid var(--alert-success-border) !important;
+        border-left: 4px solid #10B981 !important;
         border-radius: 8px;
         padding: 14px 18px;
         margin-bottom: 12px;
-        color: #F3F4F6;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-    }
+        color: var(--alert-success-text) !important;
+        box-shadow: var(--shadow-card);
+    }}
 
     /* Карточка домашнего задания */
-    .homework-card {
-        background-color: #161F30;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+    .homework-card {{
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
         border-radius: 12px;
         padding: 16px 18px;
         margin-bottom: 12px;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
-    }
+        box-shadow: var(--shadow-card);
+    }}
 
     /* Стилизация вкладок Streamlit */
-    div[data-baseweb="tab-list"] {
+    div[data-baseweb="tab-list"] {{
         gap: 8px !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-bottom: 1px solid var(--border-divider) !important;
         padding-bottom: 4px !important;
-    }
-    button[data-baseweb="tab"] {
+    }}
+    button[data-baseweb="tab"] {{
         font-family: 'Inter', sans-serif !important;
-        font-weight: 500 !important;
+        font-weight: 600 !important;
         font-size: 0.95rem !important;
-        color: #9CA3AF !important;
+        color: var(--tab-text-inactive) !important;
         background: transparent !important;
         border: 1px solid transparent !important;
         border-radius: 8px !important;
         padding: 8px 16px !important;
         transition: all 0.15s ease !important;
-    }
-    button[data-baseweb="tab"]:hover {
-        color: #F3F4F6 !important;
-        background: rgba(255, 255, 255, 0.04) !important;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        color: #F3F4F6 !important;
-        background: rgba(59, 130, 246, 0.12) !important;
-        border: 1px solid rgba(59, 130, 246, 0.3) !important;
-        font-weight: 600 !important;
-    }
+    }}
+    button[data-baseweb="tab"]:hover {{
+        color: var(--text-main) !important;
+        background: var(--bg-card-subtle) !important;
+    }}
+    button[data-baseweb="tab"][aria-selected="true"] {{
+        color: #3B82F6 !important;
+        background: var(--tab-bg-active) !important;
+        border: 1px solid var(--tab-border-active) !important;
+        font-weight: 700 !important;
+    }}
+    button[data-baseweb="tab"] p,
+    button[data-baseweb="tab"] span,
+    button[data-baseweb="tab"] div {{
+        color: inherit !important;
+        font-weight: inherit !important;
+    }}
 
     /* Кнопки Streamlit */
-    div.stButton > button[kind="primary"] {
+    div.stButton > button[kind="primary"] {{
         background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%) !important;
         border: 1px solid rgba(96, 165, 250, 0.4) !important;
         color: #FFFFFF !important;
@@ -315,28 +473,28 @@ CUSTOM_CSS = """
         border-radius: 8px !important;
         box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35) !important;
         transition: all 0.2s ease !important;
-    }
-    div.stButton > button[kind="primary"]:hover {
+    }}
+    div.stButton > button[kind="primary"]:hover {{
         background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
         box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5) !important;
         transform: translateY(-1px) !important;
-    }
-    div.stButton > button:not([kind="primary"]) {
-        background: #161F30 !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        color: #E5E7EB !important;
+    }}
+    div.stButton > button:not([kind="primary"]) {{
+        background: var(--btn-sec-bg) !important;
+        border: 1px solid var(--btn-sec-border) !important;
+        color: var(--btn-sec-text) !important;
         border-radius: 8px !important;
         font-weight: 500 !important;
         transition: all 0.2s ease !important;
-    }
-    div.stButton > button:not([kind="primary"]):hover {
-        border-color: rgba(255, 255, 255, 0.25) !important;
-        background: #1E293B !important;
-        color: #FFFFFF !important;
-    }
+    }}
+    div.stButton > button:not([kind="primary"]):hover {{
+        border-color: var(--border-card-hover) !important;
+        background: var(--btn-sec-hover-bg) !important;
+        color: var(--text-main) !important;
+    }}
 
     /* Кнопка скачивания PDF */
-    div.stDownloadButton > button {
+    div.stDownloadButton > button {{
         background: linear-gradient(135deg, #10B981 0%, #059669 100%) !important;
         border: 1px solid rgba(52, 211, 153, 0.4) !important;
         color: #FFFFFF !important;
@@ -344,60 +502,133 @@ CUSTOM_CSS = """
         border-radius: 8px !important;
         box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
         transition: all 0.2s ease !important;
-    }
-    div.stDownloadButton > button:hover {
+    }}
+    div.stDownloadButton > button:hover {{
         background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
         box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5) !important;
         transform: translateY(-1px) !important;
-    }
+    }}
 
     /* Кнопки-ссылки */
-    a[data-testid="stLinkButton"] {
-        background: #161F30 !important;
+    a[data-testid="stLinkButton"] {{
+        background: var(--btn-sec-bg) !important;
         border: 1px solid rgba(59, 130, 246, 0.3) !important;
-        color: #60A5FA !important;
+        color: #3B82F6 !important;
         border-radius: 8px !important;
         font-weight: 500 !important;
         transition: all 0.15s ease !important;
-    }
-    a[data-testid="stLinkButton"]:hover {
-        background: rgba(59, 130, 246, 0.15) !important;
+    }}
+    a[data-testid="stLinkButton"]:hover {{
+        background: var(--tab-bg-active) !important;
         border-color: #3B82F6 !important;
-        color: #93C5FD !important;
-    }
+        color: #2563EB !important;
+    }}
 
     /* Боковая панель */
-    section[data-testid="stSidebar"] {
-        background-color: #0d131f !important;
-        border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
-    }
+    section[data-testid="stSidebar"] {{
+        background-color: var(--bg-sidebar) !important;
+        border-right: 1px solid var(--border-divider) !important;
+    }}
 
     /* Разделители */
-    hr {
-        border-color: rgba(255, 255, 255, 0.08) !important;
+    hr {{
+        border-color: var(--border-divider) !important;
         margin: 1.2rem 0 !important;
-    }
+    }}
 
     /* Код и плашки */
-    .stCodeBlock, div[data-testid="stCode"] {
-        background-color: #0F172A !important;
-        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    .stCodeBlock, div[data-testid="stCode"] {{
+        background-color: var(--code-bg) !important;
+        border: 1px solid var(--border-card) !important;
         border-radius: 8px !important;
-    }
+        color: var(--text-main) !important;
+    }}
+
+    /* Поля ввода и выпадающие списки (BaseWeb & React-Aria Streamlit) */
+    div[data-testid="stTextInputRootElement"],
+    div[data-testid="stTextInput"] > div > div,
+    div[data-testid="stTextInputRootElement"] > div,
+    div[data-baseweb="input"],
+    div[data-baseweb="base-input"],
+    div[data-baseweb="input"] > div,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    div[data-testid="stSelectbox"] div.react-aria-ComboBox > div,
+    div[data-testid="stSelectbox"] div[class*="e1oobldh0"],
+    div[data-testid="stSelectbox"] [role="combobox"] {{
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 8px !important;
+        color: var(--text-main) !important;
+    }}
+    div[data-testid="stTextInputField"],
+    div[data-testid="stTextInput"] input,
+    div[data-baseweb="input"] input,
+    div[data-testid="stSelectbox"] input {{
+        background-color: transparent !important;
+        color: var(--text-main) !important;
+    }}
+    div[data-testid="stSelectbox"] span,
+    div[data-testid="stSelectbox"] div,
+    div[data-testid="stSelectbox"] p {{
+        color: var(--text-main) !important;
+    }}
+    div[data-testid="stSelectbox"] svg {{
+        fill: var(--text-muted) !important;
+        color: var(--text-muted) !important;
+    }}
+    div.react-aria-Popover,
+    ul.react-aria-ListBox,
+    li.react-aria-ListBoxItem,
+    div[data-baseweb="popover"],
+    div[data-baseweb="menu"],
+    ul[data-baseweb="menu"] {{
+        background-color: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        color: var(--text-main) !important;
+    }}
+    li.react-aria-ListBoxItem,
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="menu"] li {{
+        background-color: var(--bg-card) !important;
+        color: var(--text-main) !important;
+    }}
+    li.react-aria-ListBoxItem:hover,
+    li.react-aria-ListBoxItem[data-hovered="true"],
+    li.react-aria-ListBoxItem[data-focused="true"],
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="menu"] li:hover {{
+        background-color: var(--bg-card-subtle) !important;
+    }}
+    div[data-testid="stWidgetLabel"] label, div[data-testid="stWidgetLabel"] p {{
+        color: var(--text-main) !important;
+        font-weight: 600 !important;
+    }}
+    div[data-testid="stRadio"] label p, div[data-testid="stRadio"] label span {{
+        color: var(--text-main) !important;
+    }}
+    div[data-testid="stSlider"] [data-testid="stTickBarMin"],
+    div[data-testid="stSlider"] [data-testid="stTickBarMax"] {{
+        color: var(--text-muted) !important;
+    }}
+    div[data-testid="stCaptionContainer"], small {{
+        color: var(--text-muted) !important;
+    }}
 
     /* Жесткие размеры контейнера доски для предотвращения схлопывания и мерцания (Anti-flicker) */
     .chessboard-wrapper,
     div[data-testid="stCustomComponentV1"],
-    iframe[title*="interactive_chessboard"] {
+    iframe[title*="interactive_chessboard"] {{
         min-height: 480px !important;
         min-width: 480px !important;
         aspect-ratio: 1/1 !important;
         contain: layout !important;
         border: none !important;
-    }
+    }}
 </style>
 """
-render_html(CUSTOM_CSS)
+
+render_html(get_theme_css(is_dark))
+
 
 # Инициализация базы данных
 init_db()
@@ -546,12 +777,19 @@ with st.sidebar:
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
         <span style="font-size:1.8rem;">♟️</span>
         <div>
-            <div style="font-size:1.2rem; font-weight:700; color:#F3F4F6; letter-spacing:-0.02em;">ChessCoach AI</div>
-            <div style="font-size:0.75rem; color:#9CA3AF; text-transform:uppercase; letter-spacing:0.05em;">B2B SaaS Platform</div>
+            <div style="font-size:1.2rem; font-weight:700; color:var(--text-main); letter-spacing:-0.02em;">ChessCoach AI</div>
         </div>
     </div>
     """)
     st.caption("Аналитический стек для профессиональных тренеров и шахматных академий")
+    
+    st.radio(
+        "Тема оформления:",
+        options=["🌙 Темная", "☀️ Светлая"],
+        index=0 if is_dark else 1,
+        horizontal=True,
+        key="app_theme_choice"
+    )
     st.divider()
 
     st.subheader("👤 Профиль ученика")
@@ -690,11 +928,11 @@ if sync_error:
 
 student_display_name = st.session_state.get('student_name', 'Ученик')
 render_html(f"""
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--border-divider);">
     <div>
-        <h1 style="margin:0; font-size:1.6rem; font-weight:700;">{student_display_name}</h1>
-        <div style="color:#9CA3AF; font-size:0.85rem; margin-top:2px;">
-            Игровой профиль: <span style="color:#3B82F6; font-weight:600;">@{username}</span> ({platform.upper()}) • Всего партий в базе: <span style="color:#F3F4F6; font-weight:600;">{len(games_list)}</span>
+        <h1 style="margin:0; font-size:1.6rem; font-weight:700; color:var(--text-main);">{student_display_name}</h1>
+        <div style="color:var(--text-muted); font-size:0.85rem; margin-top:2px;">
+            Игровой профиль: <span style="color:#3B82F6; font-weight:600;">@{username}</span> ({platform.upper()}) • Всего партий в базе: <span style="color:var(--text-main); font-weight:600;">{len(games_list)}</span>
         </div>
     </div>
     <div style="display:flex; gap:8px;">
@@ -770,10 +1008,10 @@ with tab_board:
             <div class="saas-card" style="margin-top:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
                     <div style="display:flex; gap:8px; align-items:center;">
-                        <span style="background:rgba(59,130,246,0.12); color:#60A5FA; border:1px solid rgba(59,130,246,0.25); padding:2px 8px; border-radius:6px; font-size:0.75rem; font-weight:600;">
+                        <span style="background:rgba(59,130,246,0.12); color:#3B82F6; border:1px solid rgba(59,130,246,0.25); padding:2px 8px; border-radius:6px; font-size:0.75rem; font-weight:600;">
                             ⚡ {selected_game.time_control or 'Standard'}
                         </span>
-                        <span style="color:#9CA3AF; font-size:0.8rem; font-weight:500;">
+                        <span style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">
                             {color_badge}
                         </span>
                     </div>
@@ -781,29 +1019,29 @@ with tab_board:
                 </div>
 
                 <div style="margin-bottom:14px;">
-                    <div style="color:#9CA3AF; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Соперник</div>
-                    <div style="font-size:1.1rem; font-weight:700; color:#F3F4F6;">
+                    <div style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px;">Соперник</div>
+                    <div style="font-size:1.1rem; font-weight:700; color:var(--text-main);">
                         {selected_game.opponent_username} 
-                        <span style="color:#9CA3AF; font-size:0.85rem; font-weight:400;">({selected_game.opponent_rating or 'unrated'})</span>
+                        <span style="color:var(--text-muted); font-size:0.85rem; font-weight:400;">({selected_game.opponent_rating or 'unrated'})</span>
                     </div>
                 </div>
 
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
-                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px 12px;">
-                        <div style="color:#9CA3AF; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Точность CAPS</div>
+                    <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 12px;">
+                        <div style="color:var(--text-muted); font-size:0.75rem; font-weight:600; text-transform:uppercase;">Точность CAPS</div>
                         <div style="font-size:1.35rem; font-weight:700; color:#10B981; margin-top:2px;">{acc_val}%</div>
-                        <div style="background:rgba(255,255,255,0.08); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
+                        <div style="background:var(--border-divider); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
                             <div style="background:#10B981; width:{min(100.0, acc_val)}%; height:100%; border-radius:999px;"></div>
                         </div>
                     </div>
-                    <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:8px; padding:10px 12px;">
-                        <div style="color:#9CA3AF; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Средний ACPL</div>
-                        <div style="font-size:1.35rem; font-weight:700; color:#38BDF8; margin-top:2px;">{selected_game.acpl or 0} <span style="font-size:0.8rem; color:#9CA3AF; font-weight:400;">CPL</span></div>
-                        <div style="color:#9CA3AF; font-size:0.75rem; margin-top:6px;">Потеря центипешек</div>
+                    <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:10px 12px;">
+                        <div style="color:var(--text-muted); font-size:0.75rem; font-weight:600; text-transform:uppercase;">Средний ACPL</div>
+                        <div style="font-size:1.35rem; font-weight:700; color:#0284C7; margin-top:2px;">{selected_game.acpl or 0} <span style="font-size:0.8rem; color:var(--text-muted); font-weight:400;">CPL</span></div>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:6px;">Потеря центипешек</div>
                     </div>
                 </div>
 
-                <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border-radius:8px; padding:8px 12px; border:1px solid rgba(255,255,255,0.04);">
+                <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-card-subtle); border-radius:8px; padding:8px 12px; border:1px solid var(--border-subtle);">
                     <div style="display:flex; align-items:center; gap:6px;">
                         <span class="badge-blunder">BLUNDER: {selected_game.blunders_count}</span>
                     </div>
@@ -823,7 +1061,7 @@ with tab_board:
                 render_html("""
                 <div class="alert-card-success" style="margin-top:14px;">
                     <div style="font-weight:600; font-size:0.95rem;">🎉 Чистая гроссмейстерская игра!</div>
-                    <div style="font-size:0.85rem; color:#9CA3AF; margin-top:3px;">В этой партии ученик не допустил критических ошибок и грубых зевков.</div>
+                    <div style="font-size:0.85rem; color:var(--text-muted); margin-top:3px;">В этой партии ученик не допустил критических ошибок и грубых зевков.</div>
                 </div>
                 """)
                 active_error = None
@@ -850,32 +1088,32 @@ with tab_board:
                     <div class="saas-card" style="margin-top:10px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <span class="{severity_badge}">{active_error.severity.upper()}</span>
-                            <span style="color:#9CA3AF; font-size:0.8rem; font-weight:500;">Фаза: {active_error.phase.capitalize()}</span>
+                            <span style="color:var(--text-muted); font-size:0.8rem; font-weight:500;">Фаза: {active_error.phase.capitalize()}</span>
                         </div>
 
-                        <div style="font-size:0.9rem; color:#F3F4F6; margin-bottom:8px;">
+                        <div style="font-size:0.9rem; color:var(--text-main); margin-bottom:8px;">
                             <b>Тактический паттерн:</b> 
-                            <code style="background:rgba(255,255,255,0.06); color:#60A5FA; padding:2px 6px; border-radius:4px;">{active_error.tactical_tag or 'tactical_blunder'}</code>
+                            <code style="background:var(--code-bg); color:#3B82F6; padding:2px 6px; border-radius:4px; border:1px solid var(--border-subtle);">{active_error.tactical_tag or 'tactical_blunder'}</code>
                         </div>
 
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-                            <div style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:6px 10px;">
-                                <div style="font-size:0.75rem; color:#9CA3AF;">Потеря оценки</div>
-                                <div style="font-size:1.05rem; font-weight:700; color:#F87171;">-{active_error.centipawn_loss} CPL</div>
+                            <div style="background:var(--alert-danger-bg); border:1px solid var(--alert-danger-border); border-radius:6px; padding:6px 10px;">
+                                <div style="font-size:0.75rem; color:var(--text-muted);">Потеря оценки</div>
+                                <div style="font-size:1.05rem; font-weight:700; color:var(--badge-blunder-text);">-{active_error.centipawn_loss} CPL</div>
                             </div>
-                            <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:6px 10px;">
-                                <div style="font-size:0.75rem; color:#9CA3AF;">Падение шансов</div>
-                                <div style="font-size:1.05rem; font-weight:700; color:#FBBF24;">-{round((active_error.win_rate_drop or 0)*100, 1)}%</div>
+                            <div style="background:var(--badge-mistake-bg); border:1px solid var(--badge-mistake-border); border-radius:6px; padding:6px 10px;">
+                                <div style="font-size:0.75rem; color:var(--text-muted);">Падение шансов</div>
+                                <div style="font-size:1.05rem; font-weight:700; color:var(--badge-mistake-text);">-{round((active_error.win_rate_drop or 0)*100, 1)}%</div>
                             </div>
                         </div>
 
-                        <div style="font-size:0.8rem; color:#9CA3AF; margin-bottom:12px;">
+                        <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
                             Время на ход: {active_error.clock_remaining_seconds or 'N/A'}с {time_alert}
                         </div>
 
-                        <div style="border-top:1px solid rgba(255,255,255,0.08); padding-top:10px;">
-                            <div style="font-size:0.8rem; color:#9CA3AF; margin-bottom:4px;">🎯 Рекомендованный тренажер темы:</div>
-                            <div style="font-weight:600; color:#F3F4F6; font-size:0.88rem; margin-bottom:8px;">{theme_info['title']}</div>
+                        <div style="border-top:1px solid var(--border-divider); padding-top:10px;">
+                            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">🎯 Рекомендованный тренажер темы:</div>
+                            <div style="font-weight:600; color:var(--text-main); font-size:0.88rem; margin-bottom:8px;">{theme_info['title']}</div>
                         </div>
                     </div>
                     """)
@@ -927,6 +1165,7 @@ with tab_board:
                         allow_moves=True,
                         animate_best_move=animate_best,
                         best_move_uci=active_error.best_move_uci,
+                        theme=active_theme_str,
                         key=f"drag_board_{selected_game.id}_{err_id}"
                     )
 
@@ -1007,14 +1246,14 @@ with tab_board:
 
                     # Справочная плашка хода партии vs лучшего хода
                     render_html(f"""
-                    <div style="display:flex; justify-content:space-around; background:#161F30; border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:10px 14px; margin-top:8px;">
+                    <div style="display:flex; justify-content:space-around; background:var(--bg-card); border:1px solid var(--border-divider); border-radius:8px; padding:10px 14px; margin-top:8px;">
                         <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
                             <span style="color:#EF4444;">🔴 В партии:</span> 
-                            <code style="background:rgba(239,68,68,0.15); color:#F87171; padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.played_move_san}</code>
+                            <code style="background:var(--badge-blunder-bg); color:var(--badge-blunder-text); padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.played_move_san}</code>
                         </div>
                         <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem;">
                             <span style="color:#10B981;">🟢 Stockfish 19:</span> 
-                            <code style="background:rgba(16,185,129,0.15); color:#34D399; padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.best_move_san}</code>
+                            <code style="background:var(--badge-win-bg); color:var(--badge-win-text); padding:2px 6px; border-radius:4px; font-weight:600;">{active_error.best_move_san}</code>
                         </div>
                     </div>
                     """)
@@ -1053,6 +1292,7 @@ with tab_board:
                         fen=chess.STARTING_FEN,
                         orientation=selected_game.student_color,
                         allow_moves=True,
+                        theme=active_theme_str,
                         key=f"free_board_{selected_game.id}"
                     )
 
@@ -1069,6 +1309,7 @@ with tab_board:
                     allow_moves=False,
                     plies=plies,
                     initial_ply=0,
+                    theme=active_theme_str,
                     key=f"walk_board_{selected_game.id}"
                 )
 
@@ -1159,7 +1400,7 @@ with tab_analytics:
                     <span class="kpi-title">Средний ACPL</span>
                     <span class="kpi-icon">⚡</span>
                 </div>
-                <div class="kpi-value">{avg_acpl} <span style="font-size:0.9rem; color:#9CA3AF; font-weight:400;">CPL</span></div>
+                <div class="kpi-value">{avg_acpl} <span style="font-size:0.9rem; color:var(--text-muted); font-weight:400;">CPL</span></div>
                 <div class="kpi-badge kpi-badge-blue">
                     <span>{acpl_status}</span>
                 </div>
@@ -1186,6 +1427,11 @@ with tab_analytics:
         # Интерактивные графики Plotly с глубокой темной темой
         g_col1, g_col2 = st.columns(2, gap="medium")
 
+        chart_text_color = '#F3F4F6' if is_dark else '#0F172A'
+        chart_muted_color = '#9CA3AF' if is_dark else '#64748B'
+        chart_grid_color = 'rgba(255, 255, 255, 0.06)' if is_dark else 'rgba(0, 0, 0, 0.06)'
+        chart_line_color = 'rgba(255, 255, 255, 0.08)' if is_dark else 'rgba(0, 0, 0, 0.1)'
+
         with g_col1:
             st.markdown("#### ⏳ Ошибки по фазам партии")
             phase_counts = {"Дебют": 0, "Миттельшпиль": 0, "Эндшпиль": 0}
@@ -1208,24 +1454,24 @@ with tab_analytics:
                 ),
                 text=list(phase_counts.values()),
                 textposition='outside',
-                textfont=dict(color='#F3F4F6', family='Inter', size=13),
+                textfont=dict(color=chart_text_color, family='Inter', size=13),
                 hovertemplate="<b>%{x}</b><br>Ошибок: %{y}<extra></extra>"
             ))
             fig_phases.update_layout(
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(family='Inter', color='#9CA3AF'),
+                font=dict(family='Inter', color=chart_muted_color),
                 margin=dict(l=10, r=10, t=30, b=20),
                 height=280,
                 xaxis=dict(
                     showgrid=False,
-                    tickfont=dict(color='#F3F4F6', size=13, family='Inter'),
-                    linecolor='rgba(255,255,255,0.08)'
+                    tickfont=dict(color=chart_text_color, size=13, family='Inter'),
+                    linecolor=chart_line_color
                 ),
                 yaxis=dict(
                     showgrid=True,
-                    gridcolor='rgba(255,255,255,0.06)',
-                    tickfont=dict(color='#9CA3AF', size=11, family='Inter'),
+                    gridcolor=chart_grid_color,
+                    tickfont=dict(color=chart_muted_color, size=11, family='Inter'),
                     zeroline=False
                 )
             )
@@ -1256,25 +1502,25 @@ with tab_analytics:
                     ),
                     text=values,
                     textposition='outside',
-                    textfont=dict(color='#F3F4F6', family='Inter', size=12),
+                    textfont=dict(color=chart_text_color, family='Inter', size=12),
                     hovertemplate="Паттерн: <b>%{y}</b><br>Частота: %{x}<extra></extra>"
                 ))
                 fig_tags.update_layout(
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
-                    font=dict(family='Inter', color='#9CA3AF'),
+                    font=dict(family='Inter', color=chart_muted_color),
                     margin=dict(l=10, r=10, t=30, b=20),
                     height=280,
                     xaxis=dict(
                         showgrid=True,
-                        gridcolor='rgba(255,255,255,0.06)',
-                        tickfont=dict(color='#9CA3AF', size=11, family='Inter'),
+                        gridcolor=chart_grid_color,
+                        tickfont=dict(color=chart_muted_color, size=11, family='Inter'),
                         zeroline=False
                     ),
                     yaxis=dict(
                         showgrid=False,
-                        tickfont=dict(color='#F3F4F6', size=12, family='Inter'),
-                        linecolor='rgba(255,255,255,0.08)'
+                        tickfont=dict(color=chart_text_color, size=12, family='Inter'),
+                        linecolor=chart_line_color
                     )
                 )
                 st.plotly_chart(fig_tags, use_container_width=True, config={"displayModeBar": False})
@@ -1301,12 +1547,12 @@ with tab_analytics:
             render_html(f"""
             <div class="alert-card-danger" style="margin-top:10px; margin-bottom:16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                    <span style="font-weight:700; font-size:1.0rem; color:#F87171;">
+                    <span style="font-weight:700; font-size:1.0rem; color:var(--alert-danger-title);">
                         🚨 Обнаружены уязвимости в репертуаре ({holes_cnt})
                     </span>
                     <span class="badge-blunder">Требует внимания тренера</span>
                 </div>
-                <div style="font-size:0.92rem; color:#E5E7EB; line-height:1.45;">
+                <div style="font-size:0.92rem; color:var(--alert-danger-text); line-height:1.45;">
                     {repertoire_res.summary_insight}
                 </div>
             </div>
@@ -1314,10 +1560,10 @@ with tab_analytics:
         else:
             render_html(f"""
             <div class="alert-card-success" style="margin-top:10px; margin-bottom:16px;">
-                <div style="font-weight:700; font-size:1.0rem; color:#34D399; margin-bottom:4px;">
+                <div style="font-weight:700; font-size:1.0rem; color:var(--alert-success-title); margin-bottom:4px;">
                     ✅ Дебютный репертуар надежен
                 </div>
-                <div style="font-size:0.92rem; color:#E5E7EB;">
+                <div style="font-size:0.92rem; color:var(--alert-success-text);">
                     {repertoire_res.summary_insight}
                 </div>
             </div>
@@ -1349,17 +1595,17 @@ with tab_analytics:
                 # Бейдж статуса
                 if op.status == "Критическая дыра":
                     st_badge = '<span class="badge-blunder">🚨 Критическая дыра</span>'
-                    card_border = "rgba(239, 68, 68, 0.3)"
+                    card_border = "rgba(239, 68, 68, 0.3)" if is_dark else "#FCA5A5"
                 elif op.status == "Требует разбора":
                     st_badge = '<span class="badge-mistake">⚠️ Требует разбора</span>'
-                    card_border = "rgba(245, 158, 11, 0.3)"
+                    card_border = "rgba(245, 158, 11, 0.3)" if is_dark else "#FCD34D"
                 else:
                     st_badge = '<span class="badge-win">✅ Надежно</span>'
-                    card_border = "rgba(16, 185, 129, 0.25)"
+                    card_border = "rgba(16, 185, 129, 0.25)" if is_dark else "#86EFAC"
 
                 color_icon = "⚪ Белые" if op.color == "white" else "⚫ Черные"
-                wr_color = '#34D399' if op.win_rate >= 50 else ('#FBBF24' if op.win_rate >= 40 else '#F87171')
-                err_color = '#F87171' if op.early_blunders_count > 0 else ('#FBBF24' if op.early_errors_count > 0 else '#34D399')
+                wr_color = '#10B981' if op.win_rate >= 50 else ('#F59E0B' if op.win_rate >= 40 else '#EF4444')
+                err_color = '#EF4444' if op.early_blunders_count > 0 else ('#F59E0B' if op.early_errors_count > 0 else '#10B981')
                 
                 # Рендеринг карточки дебюта
                 render_html(f"""
@@ -1367,15 +1613,15 @@ with tab_analytics:
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
                         <div>
                             <div style="display:flex; align-items:center; gap:8px;">
-                                <span style="background:rgba(59,130,246,0.15); color:#60A5FA; border:1px solid rgba(59,130,246,0.3); padding:2px 8px; border-radius:6px; font-size:0.8rem; font-weight:700;">
+                                <span style="background:rgba(59,130,246,0.15); color:#3B82F6; border:1px solid rgba(59,130,246,0.3); padding:2px 8px; border-radius:6px; font-size:0.8rem; font-weight:700;">
                                     {op.eco}
                                 </span>
-                                <span style="font-size:1.08rem; font-weight:700; color:#F3F4F6;">
+                                <span style="font-size:1.08rem; font-weight:700; color:var(--text-main);">
                                     {op.name}
                                 </span>
                             </div>
-                            <div style="color:#9CA3AF; font-size:0.82rem; margin-top:4px;">
-                                Цвет фигур: <span style="color:#E5E7EB; font-weight:500;">{color_icon}</span>
+                            <div style="color:var(--text-muted); font-size:0.82rem; margin-top:4px;">
+                                Цвет фигур: <span style="color:var(--text-main); font-weight:500;">{color_icon}</span>
                             </div>
                         </div>
                         <div>
@@ -1384,45 +1630,45 @@ with tab_analytics:
                     </div>
 
                     <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:12px;">
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
-                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Партий</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:#F3F4F6; margin-top:2px;">{op.games_count}</div>
-                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">
-                                <span style="color:#34D399;">{op.wins}В</span> • 
-                                <span style="color:#9CA3AF;">{op.draws}Н</span> • 
-                                <span style="color:#F87171;">{op.losses}П</span>
+                        <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:8px 12px;">
+                            <div style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; font-weight:600;">Партий</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:var(--text-main); margin-top:2px;">{op.games_count}</div>
+                            <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">
+                                <span style="color:#10B981;">{op.wins}В</span> • 
+                                <span style="color:var(--text-muted);">{op.draws}Н</span> • 
+                                <span style="color:#EF4444;">{op.losses}П</span>
                             </div>
                         </div>
 
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
-                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Винрейт</div>
+                        <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:8px 12px;">
+                            <div style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; font-weight:600;">Винрейт</div>
                             <div style="font-size:1.2rem; font-weight:700; color:{wr_color}; margin-top:2px;">
                                 {op.win_rate}%
                             </div>
-                            <div style="background:rgba(255,255,255,0.08); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
+                            <div style="background:var(--border-divider); border-radius:999px; height:4px; width:100%; margin-top:6px; overflow:hidden;">
                                 <div style="background:{wr_color}; width:{min(100.0, op.win_rate)}%; height:100%;"></div>
                             </div>
                         </div>
 
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
-                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">ACPL Дебюта</div>
-                            <div style="font-size:1.2rem; font-weight:700; color:#38BDF8; margin-top:2px;">
-                                {op.opening_acpl} <span style="font-size:0.75rem; color:#9CA3AF; font-weight:400;">CPL</span>
+                        <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:8px 12px;">
+                            <div style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; font-weight:600;">ACPL Дебюта</div>
+                            <div style="font-size:1.2rem; font-weight:700; color:#0284C7; margin-top:2px;">
+                                {op.opening_acpl} <span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;">CPL</span>
                             </div>
-                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">Точность: {op.opening_accuracy}%</div>
+                            <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">Точность: {op.opening_accuracy}%</div>
                         </div>
 
-                        <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:8px; padding:8px 12px;">
-                            <div style="color:#9CA3AF; font-size:0.75rem; text-transform:uppercase; font-weight:600;">Ранние ошибки (1-15)</div>
+                        <div style="background:var(--bg-card-subtle); border:1px solid var(--border-subtle); border-radius:8px; padding:8px 12px;">
+                            <div style="color:var(--text-muted); font-size:0.75rem; text-transform:uppercase; font-weight:600;">Ранние ошибки (1-15)</div>
                             <div style="font-size:1.2rem; font-weight:700; color:{err_color}; margin-top:2px;">
                                 {op.early_errors_count}
                             </div>
-                            <div style="color:#9CA3AF; font-size:0.75rem; margin-top:2px;">Грубых зевков: {op.early_blunders_count}</div>
+                            <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">Грубых зевков: {op.early_blunders_count}</div>
                         </div>
                     </div>
 
-                    <div style="background:rgba(255,255,255,0.03); border-radius:8px; padding:10px 14px; border:1px solid rgba(255,255,255,0.05); font-size:0.88rem; line-height:1.45; color:#E5E7EB;">
-                        <span style="color:#60A5FA; font-weight:600;">💡 Подсказка тренеру:</span> {op.coach_tip}
+                    <div style="background:var(--bg-card-subtle); border-radius:8px; padding:10px 14px; border:1px solid var(--border-subtle); font-size:0.88rem; line-height:1.45; color:var(--text-main);">
+                        <span style="color:#3B82F6; font-weight:600;">💡 Подсказка тренеру:</span> {op.coach_tip}
                     </div>
                 </div>
                 """)
@@ -1534,8 +1780,8 @@ with tab_ai:
                 # Executive summary в акцентной карточке
                 render_html(f"""
                 <div class="alert-card-info">
-                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:#60A5FA;">📋 Резюме игры:</div>
-                    <div style="font-size:0.92rem; line-height:1.5;">{coach_rep.executive_summary}</div>
+                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:var(--alert-info-title);">📋 Резюме игры:</div>
+                    <div style="font-size:0.92rem; line-height:1.5; color:var(--alert-info-text);">{coach_rep.executive_summary}</div>
                 </div>
                 """)
                 
@@ -1544,21 +1790,21 @@ with tab_ai:
                     render_html(f"""
                     <div class="alert-card-danger">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                            <span style="font-weight:700; font-size:0.98rem; color:#F87171;">
+                            <span style="font-weight:700; font-size:0.98rem; color:var(--alert-danger-title);">
                                 [{p.severity.upper()}] {p.title}
                             </span>
-                            <span style="background:rgba(239,68,68,0.2); color:#FCA5A5; padding:2px 8px; border-radius:4px; font-size:0.75rem; font-weight:600;">
+                            <span class="badge-blunder">
                                 {p.frequency}
                             </span>
                         </div>
-                        <div style="font-size:0.88rem; color:#E5E7EB; line-height:1.4;">{p.description}</div>
+                        <div style="font-size:0.88rem; color:var(--alert-danger-text); line-height:1.4;">{p.description}</div>
                     </div>
                     """)
 
                 render_html(f"""
                 <div class="saas-card" style="margin-top:12px;">
-                    <div style="color:#9CA3AF; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em;">Оценка игры под флагом</div>
-                    <div style="font-size:1.0rem; font-weight:600; color:#F3F4F6; margin-top:3px;">⏱️ {coach_rep.time_trouble_verdict}</div>
+                    <div style="color:var(--text-muted); font-size:0.8rem; text-transform:uppercase; letter-spacing:0.04em;">Оценка игры под флагом</div>
+                    <div style="font-size:1.0rem; font-weight:600; color:var(--text-main); margin-top:3px;">⏱️ {coach_rep.time_trouble_verdict}</div>
                 </div>
                 """)
                 
@@ -1566,10 +1812,10 @@ with tab_ai:
                 for idx, lesson in enumerate(coach_rep.next_lessons_plan, 1):
                     render_html(f"""
                     <div class="saas-card-subtle" style="display:flex; align-items:flex-start; gap:10px;">
-                        <span style="background:rgba(59,130,246,0.15); color:#60A5FA; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">
+                        <span style="background:rgba(59,130,246,0.15); color:#3B82F6; width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; flex-shrink:0;">
                             {idx}
                         </span>
-                        <span style="font-size:0.92rem; color:#F3F4F6; padding-top:2px;">{lesson}</span>
+                        <span style="font-size:0.92rem; color:var(--text-main); padding-top:2px;">{lesson}</span>
                     </div>
                     """)
 
@@ -1582,12 +1828,12 @@ with tab_ai:
                     render_html(f"""
                     <div class="homework-card">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                            <div style="font-weight:700; font-size:1.0rem; color:#F3F4F6;">📌 {rec['title']}</div>
+                            <div style="font-weight:700; font-size:1.0rem; color:var(--text-main);">📌 {rec['title']}</div>
                             <span class="kpi-badge kpi-badge-blue">{rec['puzzles_recommended']} задач</span>
                         </div>
-                        <div style="color:#9CA3AF; font-size:0.88rem; line-height:1.4; margin-bottom:8px;">{rec['description']}</div>
+                        <div style="color:var(--text-muted); font-size:0.88rem; line-height:1.4; margin-bottom:8px;">{rec['description']}</div>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <span style="color:#F87171; font-size:0.8rem; font-weight:500;">Причина: {rec['error_frequency']}</span>
+                            <span style="color:var(--badge-blunder-text); font-size:0.8rem; font-weight:500;">Причина: {rec['error_frequency']}</span>
                         </div>
                     </div>
                     """)
@@ -1616,8 +1862,8 @@ with tab_ai:
                 
                 render_html(f"""
                 <div class="alert-card-success">
-                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:#34D399;">🌟 Успехи недели:</div>
-                    <div style="font-size:0.92rem; line-height:1.5;">{parent_rep.greeting_and_summary}</div>
+                    <div style="font-weight:700; font-size:1.0rem; margin-bottom:4px; color:var(--alert-success-title);">🌟 Успехи недели:</div>
+                    <div style="font-size:0.92rem; line-height:1.5; color:var(--alert-success-text);">{parent_rep.greeting_and_summary}</div>
                 </div>
                 """)
                 
@@ -1626,7 +1872,7 @@ with tab_ai:
                     render_html(f"""
                     <div class="saas-card-subtle" style="display:flex; align-items:center; gap:8px;">
                         <span style="color:#10B981; font-size:1.1rem;">✅</span>
-                        <span style="font-size:0.92rem; color:#F3F4F6;">{a}</span>
+                        <span style="font-size:0.92rem; color:var(--text-main);">{a}</span>
                     </div>
                     """)
 
@@ -1635,14 +1881,14 @@ with tab_ai:
                     render_html(f"""
                     <div class="saas-card-subtle" style="display:flex; align-items:center; gap:8px;">
                         <span style="color:#3B82F6; font-size:1.1rem;">🔹</span>
-                        <span style="font-size:0.92rem; color:#F3F4F6;">{g}</span>
+                        <span style="font-size:0.92rem; color:var(--text-main);">{g}</span>
                     </div>
                     """)
 
                 render_html(f"""
                 <div class="alert-card-info" style="margin-top:14px;">
-                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:4px; color:#60A5FA;">💡 Совет тренера для родителей дома:</div>
-                    <div style="font-size:0.9rem; line-height:1.4;">{parent_rep.home_support_advice}</div>
+                    <div style="font-weight:700; font-size:0.95rem; margin-bottom:4px; color:var(--alert-info-title);">💡 Совет тренера для родителей дома:</div>
+                    <div style="font-size:0.9rem; line-height:1.4; color:var(--alert-info-text);">{parent_rep.home_support_advice}</div>
                 </div>
                 """)
 

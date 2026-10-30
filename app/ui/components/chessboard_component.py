@@ -16,12 +16,14 @@ def render_interactive_chessboard(
     best_move_uci: Optional[str] = None,
     plies: Optional[List[Dict[str, Any]]] = None,
     initial_ply: int = 0,
+    theme: str = "dark",
     key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Интерактивная шахматная доска с поддержкой Drag-and-Drop и быстрым клиентским предпросмотром ходов.
     
     В режиме 'plies' позволяет мгновенно перемещаться по ходам партии без сетевых раундтрипов и мерцания.
+    Поддерживает темы оформления ('dark' / 'light').
     """
     return _interactive_chessboard(
         fen=fen,
@@ -32,6 +34,7 @@ def render_interactive_chessboard(
         best_move_uci=best_move_uci,
         plies=plies,
         initial_ply=initial_ply,
+        theme=theme,
         key=key,
         default=None,
     )
