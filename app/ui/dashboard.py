@@ -311,12 +311,6 @@ init_db()
 # ИНИЦИАЛИЗАЦИЯ ДАННЫХ ШКОЛЫ И ТРЕНЕРА
 # ============================================================================
 with get_db_session() as session:
-    # Первичная инициализация школы (только если база данных полностью пуста)
-    has_school = session.execute(select(School.id)).first() is not None
-    if not has_school:
-        from scripts.seed_school import seed_database
-        seed_database()
-
     school = SchoolService.get_or_create_default_school(session)
     teachers = SchoolService.list_teachers(session, school.id)
 
