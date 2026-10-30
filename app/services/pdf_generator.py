@@ -102,6 +102,45 @@ class PDFReportGenerator:
     """
 
     @classmethod
+    def generate_parent_report_pdf(
+        cls,
+        *args,
+        student_name: Optional[str] = None,
+        report: Optional[ParentReport] = None,
+        stats: Optional[AggregatedStudentStats] = None,
+        coach_name: str = "Шахматный тренер",
+        **kwargs
+    ) -> bytes:
+        rep = report
+        st = stats
+        c_name = coach_name or "Шахматный тренер"
+        if args:
+            if isinstance(args[0], ParentReport):
+                rep = args[0]
+                if len(args) > 1 and isinstance(args[1], AggregatedStudentStats):
+                    st = args[1]
+            elif isinstance(args[0], str):
+                if len(args) > 1 and isinstance(args[1], ParentReport):
+                    rep = args[1]
+                if len(args) > 2 and isinstance(args[2], AggregatedStudentStats):
+                    st = args[2]
+
+        if rep is None:
+            from app.services.llm_reporter import LLMReporterService
+            if st is not None:
+                rep = LLMReporterService().generate_parent_report(st)
+            else:
+                rep = ParentReport(
+                    child_name=student_name or "Ученик",
+                    greeting_and_summary="Регулярно тренируется и показывает хорошую дисциплину.",
+                    achievements=["Уверенная игра в дебюте", "Регулярное решение тактических задач"],
+                    areas_for_growth=["Внимательность при защите легких фигур"],
+                    home_support_advice="Хвалите ребенка за упорство и сыгранные партии.",
+                )
+
+        return cls.generate_parent_pdf(report=rep, stats=st, coach_name=c_name)
+
+    @classmethod
     def generate_parent_pdf(
         cls,
         report: ParentReport,

@@ -37,7 +37,7 @@ from app.models.chess import (
     ChessErrorEvent,
     StudentReport,
 )
-from app.schemas.school import StudentCreate
+from app.schemas.school import StudentCreate, StudentUpdate, TeacherCreate, TeacherUpdate
 from app.services.school_service import SchoolService
 from app.services.chess_sync import ChessSyncService
 from app.services.chess_analyzer import ChessEngineAnalyzer
@@ -339,6 +339,74 @@ with st.sidebar:
     )
     current_teacher_id = coach_options.get(selected_coach_label)
 
+    with st.expander("⚙️ Управление тренерами", expanded=False):
+        coach_subaction = st.radio("Действие:", ["✏️ Изменить", "➕ Добавить", "🗑️ Удалить"], horizontal=True, key="coach_mgm_radio")
+        with get_db_session() as session:
+            active_teacher_obj = session.get(Teacher, current_teacher_id) if current_teacher_id else None
+
+        if coach_subaction == "✏️ Изменить" and active_teacher_obj:
+            with st.form("form_edit_teacher"):
+                e_fname = st.text_input("Имя", value=active_teacher_obj.first_name)
+                e_lname = st.text_input("Фамилия", value=active_teacher_obj.last_name)
+                titles = ["GM", "IM", "FM", "WGM", "WFM", "КМС", "Тренер высшей категории", "Инструктор"]
+                t_idx = titles.index(active_teacher_obj.fide_title) if active_teacher_obj.fide_title in titles else 0
+                e_title = st.selectbox("Титул / Звание", titles, index=t_idx)
+                e_email = st.text_input("Email", value=active_teacher_obj.email or "")
+                e_phone = st.text_input("Телефон", value=active_teacher_obj.phone or "")
+                e_bio = st.text_area("Биография / Описание", value=active_teacher_obj.bio or "")
+                
+                if st.form_submit_button("💾 Сохранить изменения", use_container_width=True):
+                    with get_db_session() as session:
+                        SchoolService.update_teacher(session, active_teacher_obj.id, TeacherUpdate(
+                            first_name=e_fname.strip(),
+                            last_name=e_lname.strip(),
+                            fide_title=e_title,
+                            email=e_email.strip() if e_email else None,
+                            phone=e_phone.strip() if e_phone else None,
+                            bio=e_bio.strip() if e_bio else None
+                        ))
+                    st.success("Данные тренера обновлены!")
+                    time.sleep(1)
+                    st.rerun()
+
+        elif coach_subaction == "➕ Добавить":
+            with st.form("form_add_teacher"):
+                a_fname = st.text_input("Имя *", placeholder="Сергей")
+                a_lname = st.text_input("Фамилия *", placeholder="Карякин")
+                titles = ["GM", "IM", "FM", "WGM", "WFM", "КМС", "Тренер высшей категории", "Инструктор"]
+                a_title = st.selectbox("Титул / Звание", titles, index=0)
+                a_email = st.text_input("Email", placeholder="sergey@gambit.ru")
+                a_phone = st.text_input("Телефон", placeholder="+7 (999) 000-00-00")
+                a_bio = st.text_area("Биография", placeholder="Опыт преподавания...")
+                
+                if st.form_submit_button("➕ Добавить тренера", type="primary", use_container_width=True):
+                    if not a_fname.strip() or not a_lname.strip():
+                        st.error("Укажите имя и фамилию тренера!")
+                    else:
+                        with get_db_session() as session:
+                            SchoolService.create_teacher(session, TeacherCreate(
+                                school_id=school.id,
+                                first_name=a_fname.strip(),
+                                last_name=a_lname.strip(),
+                                fide_title=a_title,
+                                email=a_email.strip() if a_email else None,
+                                phone=a_phone.strip() if a_phone else None,
+                                bio=a_bio.strip() if a_bio else None
+                            ))
+                        st.success(f"Тренер {a_fname} {a_lname} добавлен!")
+                        time.sleep(1)
+                        st.rerun()
+
+        elif coach_subaction == "🗑️ Удалить" and active_teacher_obj:
+            st.warning(f"Удалить тренера **{active_teacher_obj.full_name}**?")
+            confirm_del_t = st.checkbox("Подтверждаю удаление тренера", key="chk_del_t")
+            if st.button("🗑️ Удалить тренера", disabled=not confirm_del_t, type="primary", use_container_width=True, key="btn_del_t"):
+                with get_db_session() as session:
+                    SchoolService.delete_teacher(session, active_teacher_obj.id)
+                st.success(f"Тренер {active_teacher_obj.full_name} удален.")
+                time.sleep(1)
+                st.rerun()
+
     st.divider()
 
     st.radio(
@@ -554,6 +622,64 @@ if selected_tab == "👥 Группы и ученики":
                         st.session_state["main_nav_tab"] = "🔍 Разбор ученика"
                         st.rerun()
 
+            with st.expander(f"⚙️ Управление профилем: {card.full_name}", expanded=False):
+                with get_db_session() as session:
+                    st_obj = session.get(StudentProfile, student.id)
+                    all_school_groups = SchoolService.list_groups(session, school.id)
+
+                if st_obj:
+                    tab_edit_st, tab_del_st = st.tabs(["✏️ Редактировать", "🗑️ Удалить"])
+                    with tab_edit_st:
+                        with st.form(f"form_edit_stud_{student.id}"):
+                            col_es1, col_es2 = st.columns(2)
+                            with col_es1:
+                                ef_name = st.text_input("Имя", value=st_obj.first_name)
+                                el_name = st.text_input("Фамилия", value=st_obj.last_name)
+                                erating = st.number_input("Рейтинг", min_value=500, max_value=2900, value=st_obj.current_rating or 1200, step=25)
+                                group_names = [g.name for g in all_school_groups]
+                                current_g_idx = 0
+                                for idx, g in enumerate(all_school_groups):
+                                    if g.id == st_obj.group_id:
+                                        current_g_idx = idx
+                                        break
+                                eg_name = st.selectbox("Учебная группа (перевод)", group_names, index=current_g_idx, key=f"sel_grp_{student.id}")
+                            with col_es2:
+                                ep_name = st.text_input("ФИО родителя", value=st_obj.parent_name or "")
+                                ep_phone = st.text_input("Телефон родителя", value=st_obj.parent_phone or "")
+                                ep_tg = st.text_input("Telegram родителя", value=st_obj.parent_telegram or "")
+                                elic = st.text_input("Lichess никнейм", value=card.lichess_username or "")
+                                ecom = st.text_input("Chess.com никнейм", value=card.chesscom_username or "")
+
+                            if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
+                                target_gid = next((g.id for g in all_school_groups if g.name == eg_name), st_obj.group_id)
+                                with get_db_session() as session:
+                                    SchoolService.update_student(session, st_obj.id, StudentUpdate(
+                                        first_name=ef_name.strip(),
+                                        last_name=el_name.strip(),
+                                        current_rating=int(erating),
+                                        group_id=target_gid,
+                                        parent_name=ep_name.strip() if ep_name else None,
+                                        parent_phone=ep_phone.strip() if ep_phone else None,
+                                        parent_telegram=ep_tg.strip() if ep_tg else None
+                                    ))
+                                    if elic.strip():
+                                        SchoolService.add_or_update_chess_account(session, st_obj.id, "lichess", elic.strip())
+                                    if ecom.strip():
+                                        SchoolService.add_or_update_chess_account(session, st_obj.id, "chesscom", ecom.strip())
+                                st.success("Данные ученика сохранены!")
+                                time.sleep(1)
+                                st.rerun()
+
+                    with tab_del_st:
+                        st.warning(f"Вы действительно хотите удалить ученика **{card.full_name}** и все связанные партии?")
+                        confirm_del_s = st.checkbox(f"Подтверждаю удаление {card.full_name}", key=f"chk_del_s_{student.id}")
+                        if st.button("🗑️ Удалить ученика", disabled=not confirm_del_s, type="primary", use_container_width=True, key=f"btn_del_s_{student.id}"):
+                            with get_db_session() as session:
+                                SchoolService.delete_student(session, student.id)
+                            st.success(f"Ученик {card.full_name} удален.")
+                            time.sleep(1)
+                            st.rerun()
+
             st.markdown("<div style='height:4px; border-bottom:1px solid var(--border-divider); margin:8px 0 12px 0;'></div>", unsafe_allow_html=True)
 
     # 4. Форма добавления нового ученика в группу
@@ -683,6 +809,60 @@ elif selected_tab == "🔍 Разбор ученика":
                 clean_p = "7" + clean_p[1:]
             msg = urllib.parse.quote(f"Здравствуйте, {active_student.parent_name or 'уважаемый родитель'}! Направляю отчет об успехах {active_student.first_name} в шахматах.")
             st.link_button("💬 Написать родителю", f"https://wa.me/{clean_p}?text={msg}", use_container_width=True)
+
+    with st.expander(f"⚙️ Редактировать профиль или перевести ученика {active_student.full_name}", expanded=False):
+        with get_db_session() as session:
+            all_groups_tab2 = SchoolService.list_groups(session, school.id)
+
+        tab2_e_tab, tab2_d_tab = st.tabs(["✏️ Редактировать данные", "🗑️ Удалить ученика"])
+        with tab2_e_tab:
+            with st.form(f"form_deep_edit_{active_student.id}"):
+                c_d1, c_d2 = st.columns(2)
+                with c_d1:
+                    d_first = st.text_input("Имя", value=active_student.first_name)
+                    d_last = st.text_input("Фамилия", value=active_student.last_name)
+                    d_rating = st.number_input("Рейтинг", min_value=500, max_value=2900, value=active_student.current_rating or 1200, step=25)
+                    g_names = [g.name for g in all_groups_tab2]
+                    curr_g_idx = 0
+                    for idx, g in enumerate(all_groups_tab2):
+                        if g.id == active_student.group_id:
+                            curr_g_idx = idx
+                            break
+                    d_group = st.selectbox("Группа (перевод)", g_names, index=curr_g_idx, key=f"sel_d_grp_{active_student.id}")
+                with c_d2:
+                    d_pname = st.text_input("ФИО родителя", value=active_student.parent_name or "")
+                    d_pphone = st.text_input("Телефон родителя", value=active_student.parent_phone or "")
+                    d_ptg = st.text_input("Telegram родителя", value=active_student.parent_telegram or "")
+                    d_notes = st.text_area("Заметки", value=active_student.notes or "")
+
+                if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
+                    new_gid = next((g.id for g in all_groups_tab2 if g.name == d_group), active_student.group_id)
+                    with get_db_session() as session:
+                        SchoolService.update_student(session, active_student.id, StudentUpdate(
+                            first_name=d_first.strip(),
+                            last_name=d_last.strip(),
+                            current_rating=int(d_rating),
+                            group_id=new_gid,
+                            parent_name=d_pname.strip() if d_pname else None,
+                            parent_phone=d_pphone.strip() if d_pphone else None,
+                            parent_telegram=d_ptg.strip() if d_ptg else None,
+                            notes=d_notes.strip() if d_notes else None
+                        ))
+                    st.success("Профиль ученика обновлен!")
+                    time.sleep(1)
+                    st.rerun()
+
+        with tab2_d_tab:
+            st.warning(f"Удалить профиль **{active_student.full_name}** и все связанные данные?")
+            confirm_del_deep = st.checkbox(f"Подтверждаю удаление {active_student.full_name}", key=f"chk_del_deep_{active_student.id}")
+            if st.button("🗑️ Удалить ученика", disabled=not confirm_del_deep, type="primary", use_container_width=True, key=f"btn_del_deep_{active_student.id}"):
+                with get_db_session() as session:
+                    SchoolService.delete_student(session, active_student.id)
+                st.session_state.pop("selected_student_id", None)
+                st.session_state["main_nav_tab"] = "👥 Группы и ученики"
+                st.success(f"Ученик {active_student.full_name} удален.")
+                time.sleep(1)
+                st.rerun()
 
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 

@@ -150,6 +150,19 @@ class SchoolService:
         session.flush()
         return teacher
 
+    @staticmethod
+    def delete_teacher(session: Session, teacher_id: str) -> bool:
+        teacher = session.get(Teacher, teacher_id)
+        if not teacher:
+            return False
+        # Снимаем тренера с прикрепленных групп
+        groups = session.execute(select(Group).where(Group.teacher_id == teacher_id)).scalars().all()
+        for g in groups:
+            g.teacher_id = None
+        session.delete(teacher)
+        session.flush()
+        return True
+
     # =========================================================================
     # 3. УПРАВЛЕНИЕ ГРУППАМИ (STUDENT GROUPS)
     # =========================================================================
@@ -354,6 +367,15 @@ class SchoolService:
         student.updated_at = datetime.utcnow()
         session.flush()
         return student
+
+    @staticmethod
+    def delete_student(session: Session, student_id: str) -> bool:
+        student = session.get(StudentProfile, student_id)
+        if not student:
+            return False
+        session.delete(student)
+        session.flush()
+        return True
 
     @staticmethod
     def add_or_update_chess_account(

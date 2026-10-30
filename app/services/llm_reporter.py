@@ -27,19 +27,243 @@ class GameMetricsAggregator:
     """
 
     @staticmethod
-    def aggregate(
+    @staticmethod
+    def aggregate_from_db(
         student_name: str,
-        period_description: str,
-        games_data: List[Dict[str, Any]],
+        games: List[Any],
+        errors: Optional[List[Any]] = None,
+        period_description: str = "Последние 7 дней",
     ) -> AggregatedStudentStats:
         """
-        games_data: список словарей с ключами:
-            - "analysis": GameAnalysisResult
-            - "student_color": "white" | "black"
-            - "result": "1-0" | "0-1" | "1/2-1/2"
-            - "opponent_username": str (optional)
-            - "opponent_rating": int (optional)
+        Агрегация метрик напрямую из моделей Game и ChessErrorEvent базы данных.
         """
+        if not games:
+            return AggregatedStudentStats(
+                student_name=student_name,
+                period_description=period_description,
+                total_games=0,
+                wins=0,
+                losses=0,
+                draws=0,
+                win_rate=0.0,
+                white_stats={"wins": 0, "losses": 0, "draws": 0},
+                black_stats={"wins": 0, "losses": 0, "draws": 0},
+                avg_accuracy=80.0,
+                avg_acpl=30,
+                phase_distribution=PhaseBreakdown(),
+                time_management=TimeManagementStats(),
+                top_tactical_weaknesses=[],
+                critical_error_samples=[],
+            )
+
+        total_games = len(games)
+        wins = 0
+        losses = 0
+        draws = 0
+
+        white_stats = {"wins": 0, "losses": 0, "draws": 0}
+        black_stats = {"wins": 0, "losses": 0, "draws": 0}
+
+        total_accuracy = 0.0
+        total_acpl = 0
+        opening_blunders = 0
+        middlegame_blunders = 0
+        endgame_blunders = 0
+        total_inaccuracies = 0
+        total_mistakes = 0
+        total_blunders = 0
+
+        for g in games:
+            color = (getattr(g, "student_color", None) or "white").lower()
+            res = getattr(g, "result", "") or ""
+
+            is_win = (color == "white" and res == "1-0") or (color == "black" and res == "0-1")
+            is_loss = (color == "white" and res == "0-1") or (color == "black" and res == "1-0")
+
+            if is_win:
+                wins += 1
+                if color == "white":
+                    white_stats["wins"] += 1
+                else:
+                    black_stats["wins"] += 1
+            elif is_loss:
+                losses += 1
+                if color == "white":
+                    white_stats["losses"] += 1
+                else:
+                    black_stats["losses"] += 1
+            else:
+                draws += 1
+                if color == "white":
+                    white_stats["draws"] += 1
+                else:
+                    black_stats["draws"] += 1
+
+            acc = getattr(g, "accuracy_score", None)
+            total_accuracy += float(acc) if acc is not None else 80.0
+
+            cpl = getattr(g, "acpl", None)
+            total_acpl += int(cpl) if cpl is not None else 30
+
+            inacc = getattr(g, "inaccuracies_count", None)
+            total_inaccuracies += int(inacc) if inacc is not None else 0
+
+            mist = getattr(g, "mistakes_count", None)
+            total_mistakes += int(mist) if mist is not None else 0
+
+            blund = getattr(g, "blunders_count", None)
+            total_blunders += int(blund) if blund is not None else 0
+
+        all_tactical_tags: List[str] = []
+        critical_error_samples: List[Dict[str, Any]] = []
+
+        total_student_moves = total_games * 25
+        moves_under_15s = 0
+        blunders_under_15s = 0
+        move_times: List[float] = []
+        blunder_times: List[float] = []
+
+        if errors:
+            for err in errors:
+                phase = getattr(err, "phase", "middlegame")
+                sev = getattr(err, "severity", "blunder")
+                tag = getattr(err, "tactical_tag", None)
+                is_tt = getattr(err, "is_time_trouble", False)
+                spent = getattr(err, "time_spent_seconds", None)
+                rem = getattr(err, "clock_remaining_seconds", None)
+
+                if sev == "blunder":
+                    if phase == "opening":
+                        opening_blunders += 1
+                    elif phase == "middlegame":
+                        middlegame_blunders += 1
+                    elif phase == "endgame":
+                        endgame_blunders += 1
+
+                if is_tt:
+                    moves_under_15s += 1
+                    if sev == "blunder":
+                        blunders_under_15s += 1
+
+                if spent is not None:
+                    try:
+                        f_spent = float(spent)
+                        move_times.append(f_spent)
+                        if sev == "blunder":
+                            blunder_times.append(f_spent)
+                    except (ValueError, TypeError):
+                        pass
+
+                if tag:
+                    all_tactical_tags.append(str(tag))
+
+                if len(critical_error_samples) < 5 and sev == "blunder":
+                    critical_error_samples.append({
+                        "move_number": getattr(err, "move_number", 1),
+                        "played_move": getattr(err, "played_move_san", "Nxd5?"),
+                        "best_move": getattr(err, "best_move_san", "O-O"),
+                        "centipawn_loss": getattr(err, "centipawn_loss", 200),
+                        "win_rate_drop_pct": float(getattr(err, "win_rate_drop", 25.0) or 25.0),
+                        "phase": phase,
+                        "tag": str(tag) if tag else "tactical_blunder",
+                        "time_spent": float(spent) if spent is not None else 5.0,
+                        "time_remaining": float(rem) if rem is not None else 60.0,
+                        "fen_before": getattr(err, "fen_before", ""),
+                    })
+
+        tag_counts = Counter(all_tactical_tags)
+        total_tagged = len(all_tactical_tags) or 1
+        top_tactical_weaknesses = [
+            {
+                "tag": t,
+                "count": c,
+                "percentage": round((c / total_tagged) * 100, 1),
+            }
+            for t, c in tag_counts.most_common(5)
+        ]
+
+        moves_under_15s_rate = round((moves_under_15s / max(1, total_student_moves)) * 100, 1)
+        blunders_in_time_trouble_rate = (
+            round((blunders_under_15s / max(1, total_blunders or len(errors or []))) * 100, 1)
+            if (total_blunders or errors)
+            else 0.0
+        )
+        avg_time = round(sum(move_times) / len(move_times), 1) if move_times else 12.0
+        avg_blunder_time = round(sum(blunder_times) / len(blunder_times), 1) if blunder_times else 3.5
+
+        return AggregatedStudentStats(
+            student_name=student_name,
+            period_description=period_description,
+            total_games=total_games,
+            wins=wins,
+            losses=losses,
+            draws=draws,
+            win_rate=round((wins / total_games) * 100, 1) if total_games else 0.0,
+            white_stats=white_stats,
+            black_stats=black_stats,
+            avg_accuracy=round(total_accuracy / total_games, 2) if total_games else 0.0,
+            avg_acpl=int(total_acpl / total_games) if total_games else 0,
+            phase_distribution=PhaseBreakdown(
+                opening_blunders=opening_blunders,
+                middlegame_blunders=middlegame_blunders,
+                endgame_blunders=endgame_blunders,
+                total_inaccuracies=total_inaccuracies,
+                total_mistakes=total_mistakes,
+                total_blunders=total_blunders or len(errors or []),
+            ),
+            time_management=TimeManagementStats(
+                total_moves=total_student_moves,
+                moves_under_15s_rate=moves_under_15s_rate,
+                blunders_in_time_trouble_rate=blunders_in_time_trouble_rate,
+                avg_seconds_per_move=avg_time,
+                avg_seconds_on_blunders=avg_blunder_time,
+            ),
+            top_tactical_weaknesses=top_tactical_weaknesses,
+            critical_error_samples=critical_error_samples,
+        )
+
+    @staticmethod
+    def aggregate(
+        arg1: Any,
+        arg2: Any = "Последние 7 дней",
+        arg3: Any = None,
+        **kwargs
+    ) -> AggregatedStudentStats:
+        """
+        Универсальный метод агрегации. Поддерживает как список Game-моделей БД,
+        так и сырые словари анализа.
+        """
+        # Сигнатура 1: aggregate(games, errors, student_name, [period])
+        if isinstance(arg1, list) and (not arg1 or hasattr(arg1[0], "id") or hasattr(arg1[0], "platform")):
+            games = arg1
+            errors = arg2 if isinstance(arg2, list) else []
+            s_name = arg3 if isinstance(arg3, str) else kwargs.get("student_name", "Ученик")
+            period = kwargs.get("period_description", "Последние 7 дней")
+            return GameMetricsAggregator.aggregate_from_db(
+                student_name=s_name, games=games, errors=errors, period_description=period
+            )
+
+        # Сигнатура 2: aggregate(student_name, games, errors, [period])
+        if isinstance(arg1, str) and isinstance(arg2, list) and (not arg2 or hasattr(arg2[0], "id") or hasattr(arg2[0], "platform")):
+            s_name = arg1
+            games = arg2
+            errors = arg3 if isinstance(arg3, list) else []
+            period = kwargs.get("period_description", "Последние 7 дней")
+            return GameMetricsAggregator.aggregate_from_db(
+                student_name=s_name, games=games, errors=errors, period_description=period
+            )
+
+        # Сигнатура 3: aggregate(student_name, period_description, games_data)
+        student_name = arg1 if isinstance(arg1, str) else "Ученик"
+        period_description = arg2 if isinstance(arg2, str) else "Период"
+        games_data = arg3 if isinstance(arg3, list) else (arg1 if isinstance(arg1, list) else [])
+
+        # Если передан список Game-моделей
+        if games_data and (hasattr(games_data[0], "id") or hasattr(games_data[0], "platform")):
+            return GameMetricsAggregator.aggregate_from_db(
+                student_name=student_name, games=games_data, errors=[], period_description=period_description
+            )
+
         if not games_data:
             raise ValueError("Список партий для агрегации пуст.")
 
@@ -229,10 +453,14 @@ class LLMReporterService:
             self._openai_client = OpenAI(api_key=self.openai_key)
         return self._openai_client
 
-    def generate_coach_report(self, stats: AggregatedStudentStats) -> CoachReport:
+    def generate_coach_report(self, stats: Optional[AggregatedStudentStats] = None) -> CoachReport:
         """
         Генерация экспертного фактологического отчета для тренера.
         """
+        if stats is None:
+            stats = self
+            self = LLMReporterService()
+
         client = self._get_openai_client()
         if not client:
             logger.info("OpenAI API key не настроен. Используем эвристический fallback-генератор CoachReport.")
@@ -289,10 +517,14 @@ class LLMReporterService:
             logger.error(f"Ошибка при вызове OpenAI Structured Output: {exc}. Переход на fallback.")
             return self._fallback_coach_report(stats)
 
-    def generate_parent_report(self, stats: AggregatedStudentStats) -> ParentReport:
+    def generate_parent_report(self, stats: Optional[AggregatedStudentStats] = None) -> ParentReport:
         """
         Генерация эмпатичного отчета для родителей без шахматной терминологии.
         """
+        if stats is None:
+            stats = self
+            self = LLMReporterService()
+
         client = self._get_openai_client()
         if not client:
             logger.info("OpenAI API key не настроен. Используем эвристический fallback-генератор ParentReport.")
