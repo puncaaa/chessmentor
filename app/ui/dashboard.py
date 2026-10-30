@@ -304,18 +304,21 @@ init_db()
 # ИНИЦИАЛИЗАЦИЯ ДАННЫХ ШКОЛЫ И ТРЕНЕРА
 # ============================================================================
 with get_db_session() as session:
-    school = SchoolService.get_or_create_default_school(session)
-    teachers = SchoolService.list_teachers(session, school.id)
-    if not teachers:
-        # Автоматическое наполнение, если база пустая
+    # Первичная инициализация школы (только если база данных полностью пуста)
+    has_school = session.execute(select(School.id)).first() is not None
+    if not has_school:
         from scripts.seed_school import seed_database
         seed_database()
-        school = SchoolService.get_or_create_default_school(session)
-        teachers = SchoolService.list_teachers(session, school.id)
+
+    school = SchoolService.get_or_create_default_school(session)
+    teachers = SchoolService.list_teachers(session, school.id)
 
 # Селектор тренера
-coach_options = {f"{t.full_name} ({t.fide_title or 'Тренер'})": t.id for t in teachers}
-default_coach_name = list(coach_options.keys())[0] if coach_options else "Тренер"
+if teachers:
+    coach_options = {f"{t.full_name} ({t.fide_title or 'Тренер'})": t.id for t in teachers}
+else:
+    coach_options = {"(Тренеры не назначены)": None}
+default_coach_name = list(coach_options.keys())[0]
 
 # ============================================================================
 # БОКОВАЯ ПАНЕЛЬ (SIDEBAR): О ШКОЛЕ И НАСТРОЙКИ
@@ -339,35 +342,38 @@ with st.sidebar:
     )
     current_teacher_id = coach_options.get(selected_coach_label)
 
-    with st.expander("⚙️ Управление тренерами", expanded=False):
+    with st.expander("⚙️ Управление тренерами", expanded=(not teachers)):
         coach_subaction = st.radio("Действие:", ["✏️ Изменить", "➕ Добавить", "🗑️ Удалить"], horizontal=True, key="coach_mgm_radio")
         with get_db_session() as session:
             active_teacher_obj = session.get(Teacher, current_teacher_id) if current_teacher_id else None
 
-        if coach_subaction == "✏️ Изменить" and active_teacher_obj:
-            with st.form("form_edit_teacher"):
-                e_fname = st.text_input("Имя", value=active_teacher_obj.first_name)
-                e_lname = st.text_input("Фамилия", value=active_teacher_obj.last_name)
-                titles = ["GM", "IM", "FM", "WGM", "WFM", "КМС", "Тренер высшей категории", "Инструктор"]
-                t_idx = titles.index(active_teacher_obj.fide_title) if active_teacher_obj.fide_title in titles else 0
-                e_title = st.selectbox("Титул / Звание", titles, index=t_idx)
-                e_email = st.text_input("Email", value=active_teacher_obj.email or "")
-                e_phone = st.text_input("Телефон", value=active_teacher_obj.phone or "")
-                e_bio = st.text_area("Биография / Описание", value=active_teacher_obj.bio or "")
-                
-                if st.form_submit_button("💾 Сохранить изменения", use_container_width=True):
-                    with get_db_session() as session:
-                        SchoolService.update_teacher(session, active_teacher_obj.id, TeacherUpdate(
-                            first_name=e_fname.strip(),
-                            last_name=e_lname.strip(),
-                            fide_title=e_title,
-                            email=e_email.strip() if e_email else None,
-                            phone=e_phone.strip() if e_phone else None,
-                            bio=e_bio.strip() if e_bio else None
-                        ))
-                    st.success("Данные тренера обновлены!")
-                    time.sleep(1)
-                    st.rerun()
+        if coach_subaction == "✏️ Изменить":
+            if not active_teacher_obj:
+                st.info("Нет тренеров для редактирования. Выберите вкладку '➕ Добавить', чтобы создать первого тренера.")
+            else:
+                with st.form("form_edit_teacher"):
+                    e_fname = st.text_input("Имя", value=active_teacher_obj.first_name)
+                    e_lname = st.text_input("Фамилия", value=active_teacher_obj.last_name)
+                    titles = ["GM", "IM", "FM", "WGM", "WFM", "КМС", "Тренер высшей категории", "Инструктор"]
+                    t_idx = titles.index(active_teacher_obj.fide_title) if active_teacher_obj.fide_title in titles else 0
+                    e_title = st.selectbox("Титул / Звание", titles, index=t_idx)
+                    e_email = st.text_input("Email", value=active_teacher_obj.email or "")
+                    e_phone = st.text_input("Телефон", value=active_teacher_obj.phone or "")
+                    e_bio = st.text_area("Биография / Описание", value=active_teacher_obj.bio or "")
+                    
+                    if st.form_submit_button("💾 Сохранить изменения", use_container_width=True):
+                        with get_db_session() as session:
+                            SchoolService.update_teacher(session, active_teacher_obj.id, TeacherUpdate(
+                                first_name=e_fname.strip(),
+                                last_name=e_lname.strip(),
+                                fide_title=e_title,
+                                email=e_email.strip() if e_email else None,
+                                phone=e_phone.strip() if e_phone else None,
+                                bio=e_bio.strip() if e_bio else None
+                            ))
+                        st.success("Данные тренера обновлены!")
+                        time.sleep(1)
+                        st.rerun()
 
         elif coach_subaction == "➕ Добавить":
             with st.form("form_add_teacher"):
@@ -397,15 +403,18 @@ with st.sidebar:
                         time.sleep(1)
                         st.rerun()
 
-        elif coach_subaction == "🗑️ Удалить" and active_teacher_obj:
-            st.warning(f"Удалить тренера **{active_teacher_obj.full_name}**?")
-            confirm_del_t = st.checkbox("Подтверждаю удаление тренера", key="chk_del_t")
-            if st.button("🗑️ Удалить тренера", disabled=not confirm_del_t, type="primary", use_container_width=True, key="btn_del_t"):
-                with get_db_session() as session:
-                    SchoolService.delete_teacher(session, active_teacher_obj.id)
-                st.success(f"Тренер {active_teacher_obj.full_name} удален.")
-                time.sleep(1)
-                st.rerun()
+        elif coach_subaction == "🗑️ Удалить":
+            if not active_teacher_obj:
+                st.info("В школе нет добавленных тренеров для удаления.")
+            else:
+                st.warning(f"Удалить тренера **{active_teacher_obj.full_name}**?")
+                confirm_del_t = st.checkbox("Подтверждаю удаление тренера", key="chk_del_t")
+                if st.button("🗑️ Удалить тренера", disabled=not confirm_del_t, type="primary", use_container_width=True, key="btn_del_t"):
+                    with get_db_session() as session:
+                        SchoolService.delete_teacher(session, active_teacher_obj.id)
+                    st.success(f"Тренер {active_teacher_obj.full_name} удален.")
+                    time.sleep(1)
+                    st.rerun()
 
     st.divider()
 
@@ -428,9 +437,20 @@ with st.sidebar:
     </div>
     """)
 
+    with st.expander("🛠️ База данных / Демо", expanded=False):
+        st.caption("Если потребуется заново наполнить базу исходными демонстрационными данными:")
+        confirm_seed = st.checkbox("Подтверждаю сброс демо-данных", key="chk_reset_demo")
+        if st.button("🔄 Восстановить демо-данные", disabled=not confirm_seed, use_container_width=True, key="btn_reset_demo"):
+            from scripts.seed_school import seed_database
+            seed_database()
+            st.success("Демо-данные успешно восстановлены!")
+            time.sleep(1)
+            st.rerun()
+
 # ============================================================================
 # ВЕРХНЯЯ ШАПКА ДАШБОРДА
 # ============================================================================
+coach_display_name = selected_coach_label if current_teacher_id else "Не назначен"
 render_html(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border-divider);">
     <div style="display:flex; align-items:center; gap:12px;">
@@ -440,7 +460,7 @@ render_html(f"""
                 {school.name}
             </div>
             <div style="font-size:0.85rem; color:var(--text-muted); margin-top:2px;">
-                Кабинет тренера: <span style="color:#3B82F6; font-weight:600;">{selected_coach_label}</span> • Лицензия активна
+                Кабинет тренера: <span style="color:#3B82F6; font-weight:600;">{coach_display_name}</span> • Лицензия активна
             </div>
         </div>
     </div>
@@ -551,7 +571,7 @@ if selected_tab == "👥 Группы и ученики":
                 st.rerun()
 
     with col_sync_info:
-        st.caption(f"Расписание занятий: **{group_stats.schedule or 'По договоренности'}** • Куратор: **{group_stats.teacher_name or selected_coach_label}**")
+        st.caption(f"Расписание занятий: **{group_stats.schedule or 'По договоренности'}** • Куратор: **{group_stats.teacher_name or coach_display_name}**")
 
     st.divider()
 
@@ -924,12 +944,17 @@ elif selected_tab == "🔍 Разбор ученика":
             st.markdown("#### 🎯 Интерактивная доска разбора")
             if selected_error:
                 board_orientation = "white" if chosen_game.student_color == "white" else "black"
+                show_best = st.checkbox("💡 Показать правильный ход Stockfish на доске", key=f"show_best_{selected_error.id}")
+
                 render_interactive_chessboard(
                     fen=selected_error.fen_before,
-                    eval_score=selected_error.eval_before / 100.0,
+                    eval_score=(selected_error.eval_before / 100.0) if selected_error.eval_before is not None else 0.0,
                     best_move=selected_error.best_move_uci,
                     student_move=selected_error.played_move_uci,
+                    best_move_uci=selected_error.best_move_uci,
+                    animate_best_move=show_best,
                     orientation=board_orientation,
+                    theme="dark" if is_dark else "light",
                     key=f"board_deep_{selected_error.id}"
                 )
 
@@ -944,6 +969,14 @@ elif selected_tab == "🔍 Разбор ученика":
                     </div>
                 </div>
                 """)
+            else:
+                board_orientation = "white" if chosen_game.student_color == "white" else "black"
+                render_interactive_chessboard(
+                    fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    orientation=board_orientation,
+                    theme="dark" if is_dark else "light",
+                    key=f"board_clean_{chosen_game.id}"
+                )
 
         st.divider()
 
