@@ -26,9 +26,11 @@ celery_app.conf.update(
     result_backend="cache+memory://",
 )
 
+import httpx
 from app.db.session import init_db, get_db_session
 from app.models.chess import StudentProfile, StudentChessAccount, Game, ChessErrorEvent
 from app.tasks.sync_tasks import sync_student_games
+from app.services.chess_sync import UserNotFoundError
 from app.services.chess_analyzer import ChessEngineAnalyzer
 from app.services.llm_reporter import GameMetricsAggregator, LLMReporterService
 from app.services.puzzle_service import PuzzleGeneratorService
@@ -569,12 +571,16 @@ with st.sidebar:
 
     sync_btn = st.button("🚀 Синхронизировать и разобрать партии", use_container_width=True, type="primary")
 
+    if st.session_state.get("sync_error"):
+        st.error(f"❌ {st.session_state['sync_error']}")
+
 # Автоматическое переключение ученика при смене платформы/никнейма
 platform_key = f"{platform}_{username}"
 if st.session_state.get("current_platform_key") != platform_key:
     st.session_state["current_platform_key"] = platform_key
     st.session_state.pop("cached_coach_report", None)
     st.session_state.pop("cached_parent_report", None)
+    st.session_state.pop("sync_error", None)
     with get_db_session() as session:
         acc = session.execute(
             select(StudentChessAccount).where(
@@ -598,10 +604,49 @@ if sync_btn:
         st.session_state.pop("cached_parent_report", None)
         
         t0 = time.perf_counter()
-        res = sync_student_games(student_id=student_id, max_games=games_count)
-        elapsed = time.perf_counter() - t0
-        
-        st.sidebar.success(f"Готово за {elapsed:.2f}с! Загружено: {res['new_games']}, Дубликатов: {res['skipped_duplicates']}")
+        try:
+            res = sync_student_games(student_id=student_id, max_games=games_count)
+            elapsed = time.perf_counter() - t0
+
+            if isinstance(res, dict) and res.get("status") == "user_not_found":
+                st.session_state["sync_error"] = "user not found"
+                # Удаляем пустой созданный аккаунт при 404, чтобы база оставалась чистой
+                with get_db_session() as session:
+                    acc = session.execute(
+                        select(StudentChessAccount).where(
+                            StudentChessAccount.platform == platform,
+                            StudentChessAccount.username == username
+                        )
+                    ).scalars().first()
+                    if acc:
+                        has_games = session.execute(select(Game.id).where(Game.student_profile_id == acc.student_profile_id)).first() is not None
+                        if not has_games:
+                            st_prof = session.get(StudentProfile, acc.student_profile_id)
+                            session.delete(acc)
+                            if st_prof:
+                                session.delete(st_prof)
+                st.session_state.pop("student_id", None)
+            else:
+                st.session_state.pop("sync_error", None)
+                st.sidebar.success(f"Готово за {elapsed:.2f}с! Загружено: {res['new_games']}, Дубликатов: {res['skipped_duplicates']}")
+        except (UserNotFoundError, httpx.HTTPStatusError) as exc:
+            st.session_state["sync_error"] = "user not found"
+            with get_db_session() as session:
+                acc = session.execute(
+                    select(StudentChessAccount).where(
+                        StudentChessAccount.platform == platform,
+                        StudentChessAccount.username == username
+                    )
+                ).scalars().first()
+                if acc:
+                    has_games = session.execute(select(Game.id).where(Game.student_profile_id == acc.student_profile_id)).first() is not None
+                    if not has_games:
+                        st_prof = session.get(StudentProfile, acc.student_profile_id)
+                        session.delete(acc)
+                        if st_prof:
+                            session.delete(st_prof)
+            st.session_state.pop("student_id", None)
+
         st.rerun()
 
 # Получаем текущего ученика
@@ -639,6 +684,10 @@ if current_student_id:
 # ============================================================================
 # ГЛАВНЫЙ ЭКРАН (ШАПКА И 3 ВКЛАДКИ)
 # ============================================================================
+sync_error = st.session_state.get("sync_error")
+if sync_error:
+    st.error(f"❌ {sync_error}")
+
 student_display_name = st.session_state.get('student_name', 'Ученик')
 render_html(f"""
 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">

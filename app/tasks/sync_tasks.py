@@ -8,7 +8,7 @@ from celery import shared_task
 from app.tasks.celery_app import celery_app
 from app.tasks.analysis_tasks import analyze_game_task
 from app.db.session import get_db_session
-from app.services.chess_sync import ChessSyncService
+from app.services.chess_sync import ChessSyncService, UserNotFoundError
 from app.services.game_service import GameService
 
 logger = logging.getLogger(__name__)
@@ -74,7 +74,26 @@ def sync_student_games(self, student_id: str, max_games: int = 10) -> dict:
                     )
                 )
 
+        except UserNotFoundError as exc:
+            logger.warning(f"Шахматный пользователь не найден: {exc}")
+            return {
+                "status": "user_not_found",
+                "message": "User not found",
+                "error": str(exc),
+                "new_games": 0,
+                "skipped_duplicates": 0
+            }
+
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.warning(f"Шахматный пользователь {account.username} не найден (404).")
+                return {
+                    "status": "user_not_found",
+                    "message": "User not found",
+                    "error": f"User '{account.username}' not found",
+                    "new_games": 0,
+                    "skipped_duplicates": 0
+                }
             if exc.response.status_code == 429:
                 logger.warning(f"Rate limit 429 при синхронизации {account.platform}:{account.username}. Рестарт через backoff...")
                 raise self.retry(exc=exc, countdown=60)

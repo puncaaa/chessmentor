@@ -6,6 +6,12 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+class UserNotFoundError(Exception):
+    """Исключение: шахматный пользователь не найден на указанной платформе (404 Not Found)."""
+    pass
+
+
 class ChessSyncService:
     """
     Асинхронный сервис для инкрементальной синхронизации партий 
@@ -57,6 +63,9 @@ class ChessSyncService:
             if response.status_code == 429:
                 logger.warning("Lichess rate limit hit (429). Backing off...")
                 raise httpx.HTTPStatusError("Lichess 429 Rate Limit", request=response.request, response=response)
+            if response.status_code == 404:
+                logger.warning(f"Игрок Lichess '{username}' не найден (404).")
+                raise UserNotFoundError(f"User '{username}' not found on Lichess")
             response.raise_for_status()
 
             for line in response.text.strip().split("\n"):
@@ -87,14 +96,25 @@ class ChessSyncService:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
+                # Сначала проверяем существование профиля игрока на Chess.com
+                profile_res = await client.get(f"{self.CHESSCOM_BASE_URL}/{clean_username}", headers=self.headers)
+                if profile_res.status_code == 404:
+                    logger.warning(f"Игрок Chess.com '{username}' не найден (404).")
+                    raise UserNotFoundError(f"User '{username}' not found on Chess.com")
+                if profile_res.status_code == 429:
+                    raise httpx.HTTPStatusError("Chess.com 429 Rate Limit", request=profile_res.request, response=profile_res)
+                profile_res.raise_for_status()
+
                 res = await client.get(archives_url, headers=self.headers)
                 if res.status_code == 429:
                     raise httpx.HTTPStatusError("Chess.com 429 Rate Limit", request=res.request, response=res)
                 if res.status_code == 404:
-                    logger.warning(f"Игрок Chess.com '{username}' не найден.")
+                    logger.warning(f"Архивы Chess.com для '{username}' не найдены.")
                     return []
                 res.raise_for_status()
                 archives = res.json().get("archives", [])
+            except UserNotFoundError:
+                raise
             except httpx.HTTPError as exc:
                 logger.error(f"Ошибка при запросе архивов Chess.com для {username}: {exc}")
                 raise
