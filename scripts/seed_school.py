@@ -181,6 +181,10 @@ def seed_database():
                 )
                 session.add(grp)
                 session.flush()
+            else:
+                grp.teacher_id = gdata["teacher_id"]
+                grp.is_active = True
+                session.flush()
             groups_map[gdata["name"]] = grp
 
         print(f"✅ Группы сформированы: {len(groups_map)} учебные группы")

@@ -212,6 +212,12 @@ class SchoolService:
         group = session.get(Group, group_id)
         if not group:
             return False
+        # Открепляем учеников от группы
+        students = session.execute(
+            select(StudentProfile).where(StudentProfile.group_id == group_id)
+        ).scalars().all()
+        for s in students:
+            s.group_id = None
         group.is_active = False
         group.updated_at = datetime.utcnow()
         session.flush()

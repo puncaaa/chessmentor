@@ -12,7 +12,7 @@ import chess
 import chess.svg
 import chess.pgn
 import plotly.graph_objects as go
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 # Добавляем корневую директорию проекта в sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -37,7 +37,14 @@ from app.models.chess import (
     ChessErrorEvent,
     StudentReport,
 )
-from app.schemas.school import StudentCreate, StudentUpdate, TeacherCreate, TeacherUpdate
+from app.schemas.school import (
+    StudentCreate,
+    StudentUpdate,
+    TeacherCreate,
+    TeacherUpdate,
+    GroupCreate,
+    GroupUpdate,
+)
 from app.services.school_service import SchoolService
 from app.services.chess_sync import ChessSyncService
 from app.services.chess_analyzer import ChessEngineAnalyzer
@@ -486,18 +493,72 @@ selected_tab = st.radio(
 )
 st.session_state["main_nav_tab"] = selected_tab
 
-# Загрузка групп школы
-with get_db_session() as session:
-    school_groups = SchoolService.list_groups(session, school.id)
-
-if not school_groups:
-    st.warning("В школе пока нет групп. Нажмите сидирование базы данных!")
+# ============================================================================
+# ЗАГРУЗКА ГРУПП ТЕКУЩЕГО ТРЕНЕРА И УПРАВЛЕНИЕ ГРУППАМИ
+# ============================================================================
+if not current_teacher_id:
+    st.info("👈 **Тренер не выбран.** Пожалуйста, выберите или добавьте тренера в левом боковом меню, чтобы просмотреть его учебные группы и учеников.")
     st.stop()
 
-# Групповой селектор
-group_dict = {f"{g.name} ({g.level})": g.id for g in school_groups}
+with get_db_session() as session:
+    coach_groups = SchoolService.list_groups(session, school.id, teacher_id=current_teacher_id)
+    unassigned_groups = session.execute(
+        select(Group).where(and_(Group.school_id == school.id, Group.teacher_id == None, Group.is_active == True))
+    ).scalars().all()
+    all_teachers_in_school = SchoolService.list_teachers(session, school.id)
+
+if not coach_groups:
+    st.warning(f"У тренера **{coach_display_name}** пока нет закрепленных учебных групп.")
+
+    if unassigned_groups:
+        st.markdown("#### 📌 Свободные группы школы (без назначенного куратора):")
+        for ug in unassigned_groups:
+            col_ug1, col_ug2 = st.columns([8, 2])
+            with col_ug1:
+                st.markdown(f"**{ug.name}** ({ug.level}) • {ug.schedule or 'Без расписания'}")
+            with col_ug2:
+                if st.button("Прикрепить к себе", key=f"btn_adopt_empty_{ug.id}", use_container_width=True):
+                    with get_db_session() as session:
+                        SchoolService.update_group(session, ug.id, GroupUpdate(teacher_id=current_teacher_id))
+                    st.success(f"Группа '{ug.name}' закреплена за вами!")
+                    time.sleep(1)
+                    st.rerun()
+
+    with st.expander("➕ Создать учебную группу для этого тренера", expanded=True):
+        with st.form("form_create_first_group"):
+            g_name = st.text_input("Название группы *", placeholder="Например: Разрядники 1400–1600 (Тактика)")
+            levels = [
+                "Начинающие (0–1000)",
+                "3-й юношеский разряд (1000–1200)",
+                "2-й / 1-й юношеский (1200–1500)",
+                "Взрослые разряды (1500–1800)",
+                "КМС / Мастера (1800+)",
+            ]
+            g_level = st.selectbox("Уровень группы", levels, index=0)
+            g_sched = st.text_input("Расписание", placeholder="Например: Вт, Чт 17:00 - 18:30")
+            g_notes = st.text_area("Заметки тренера", placeholder="Фокус обучения, цели...")
+            if st.form_submit_button("➕ Создать группу", type="primary", use_container_width=True):
+                if not g_name.strip():
+                    st.error("Укажите название группы!")
+                else:
+                    with get_db_session() as session:
+                        SchoolService.create_group(session, GroupCreate(
+                            school_id=school.id,
+                            teacher_id=current_teacher_id,
+                            name=g_name.strip(),
+                            level=g_level,
+                            schedule=g_sched.strip() if g_sched else None,
+                            notes=g_notes.strip() if g_notes else None,
+                        ))
+                    st.success(f"Группа '{g_name}' успешно создана!")
+                    time.sleep(1)
+                    st.rerun()
+    st.stop()
+
+# Групповой селектор для текущего тренера
+group_dict = {f"{g.name} ({g.level})": g.id for g in coach_groups}
 selected_group_label = st.selectbox(
-    "Учебная группа:",
+    f"Учебная группа тренера ({len(coach_groups)}):",
     options=list(group_dict.keys()),
     index=0,
     key="active_group_select"
@@ -507,6 +568,112 @@ selected_group_id = group_dict[selected_group_label]
 with get_db_session() as session:
     group_stats = SchoolService.get_group_with_stats(session, selected_group_id)
     group_students = SchoolService.list_students(session, school_id=school.id, group_id=selected_group_id)
+    current_grp_obj = session.get(Group, selected_group_id)
+
+with st.expander(f"⚙️ Управление группами тренера ({selected_group_label})", expanded=False):
+    tab_titles = ["✏️ Редактировать группу", "➕ Создать новую группу", "🗑️ Удалить группу"]
+    if unassigned_groups:
+        tab_titles.insert(2, "📌 Прикрепить свободную")
+
+    tabs = st.tabs(tab_titles)
+
+    with tabs[0]:  # ✏️ Редактировать
+        if current_grp_obj:
+            with st.form("form_edit_group"):
+                eg_name = st.text_input("Название группы *", value=current_grp_obj.name)
+                levels = [
+                    "Начинающие (0–1000)",
+                    "3-й юношеский разряд (1000–1200)",
+                    "2-й / 1-й юношеский (1200–1500)",
+                    "Взрослые разряды (1500–1800)",
+                    "КМС / Мастера (1800+)",
+                ]
+                l_idx = levels.index(current_grp_obj.level) if current_grp_obj.level in levels else 0
+                eg_level = st.selectbox("Уровень группы", levels, index=l_idx)
+                eg_sched = st.text_input("Расписание", value=current_grp_obj.schedule or "")
+
+                teacher_map = {f"{t.full_name} ({t.fide_title or 'Тренер'})": t.id for t in all_teachers_in_school}
+                curr_t_label = next((k for k, v in teacher_map.items() if v == current_grp_obj.teacher_id), list(teacher_map.keys())[0] if teacher_map else "")
+                t_labels = list(teacher_map.keys())
+                curr_t_idx = t_labels.index(curr_t_label) if curr_t_label in t_labels else 0
+                eg_teacher_label = st.selectbox("Ответственный тренер", t_labels, index=curr_t_idx)
+
+                eg_notes = st.text_area("Заметки тренера", value=current_grp_obj.notes or "")
+
+                if st.form_submit_button("💾 Сохранить изменения группы", type="primary", use_container_width=True):
+                    if not eg_name.strip():
+                        st.error("Название группы не может быть пустым!")
+                    else:
+                        with get_db_session() as session:
+                            SchoolService.update_group(session, current_grp_obj.id, GroupUpdate(
+                                name=eg_name.strip(),
+                                level=eg_level,
+                                teacher_id=teacher_map.get(eg_teacher_label),
+                                schedule=eg_sched.strip() if eg_sched else None,
+                                notes=eg_notes.strip() if eg_notes else None,
+                            ))
+                        st.success("Данные группы успешно обновлены!")
+                        time.sleep(1)
+                        st.rerun()
+
+    with tabs[1]:  # ➕ Создать новую
+        with st.form("form_add_new_group"):
+            ag_name = st.text_input("Название новой группы *", placeholder="Например: Продвинутая тактика и расчет")
+            levels = [
+                "Начинающие (0–1000)",
+                "3-й юношеский разряд (1000–1200)",
+                "2-й / 1-й юношеский (1200–1500)",
+                "Взрослые разряды (1500–1800)",
+                "КМС / Мастера (1800+)",
+            ]
+            ag_level = st.selectbox("Уровень подготовки", levels, index=0, key="new_grp_lvl_key")
+            ag_sched = st.text_input("Расписание", placeholder="Например: Ср, Сб 17:30 - 19:00", key="new_grp_sch_key")
+            ag_notes = st.text_area("Заметки", placeholder="Цели и программа...", key="new_grp_nt_key")
+
+            if st.form_submit_button("➕ Создать группу для текущего тренера", type="primary", use_container_width=True):
+                if not ag_name.strip():
+                    st.error("Укажите название группы!")
+                else:
+                    with get_db_session() as session:
+                        SchoolService.create_group(session, GroupCreate(
+                            school_id=school.id,
+                            teacher_id=current_teacher_id,
+                            name=ag_name.strip(),
+                            level=ag_level,
+                            schedule=ag_sched.strip() if ag_sched else None,
+                            notes=ag_notes.strip() if ag_notes else None,
+                        ))
+                    st.success(f"Группа '{ag_name}' успешно создана!")
+                    time.sleep(1)
+                    st.rerun()
+
+    if unassigned_groups:
+        with tabs[2]:  # 📌 Прикрепить свободную
+            st.info("В школе есть группы без назначенного куратора:")
+            for ug in unassigned_groups:
+                col_u1, col_u2 = st.columns([8, 2])
+                with col_u1:
+                    st.markdown(f"**{ug.name}** ({ug.level}) • {ug.schedule or 'Без расписания'}")
+                with col_u2:
+                    if st.button("Прикрепить", key=f"btn_adopt_in_tab_{ug.id}", use_container_width=True):
+                        with get_db_session() as session:
+                            SchoolService.update_group(session, ug.id, GroupUpdate(teacher_id=current_teacher_id))
+                        st.success(f"Группа '{ug.name}' закреплена за вами!")
+                        time.sleep(1)
+                        st.rerun()
+
+    del_tab_index = 3 if unassigned_groups else 2
+    with tabs[del_tab_index]:  # 🗑️ Удалить
+        if current_grp_obj:
+            st.warning(f"Удалить группу **{current_grp_obj.name}**?")
+            st.caption("Ученики группы не удалятся, но будут откреплены от этой группы.")
+            confirm_del_grp = st.checkbox(f"Подтверждаю удаление группы '{current_grp_obj.name}'", key=f"del_chk_{current_grp_obj.id}")
+            if st.button("🗑️ Удалить группу", disabled=not confirm_del_grp, type="primary", use_container_width=True, key=f"btn_del_grp_{current_grp_obj.id}"):
+                with get_db_session() as session:
+                    SchoolService.delete_group(session, current_grp_obj.id)
+                st.success(f"Группа '{current_grp_obj.name}' удалена.")
+                time.sleep(1)
+                st.rerun()
 
 st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
