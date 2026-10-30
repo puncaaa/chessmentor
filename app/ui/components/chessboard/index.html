@@ -20,10 +20,11 @@
       justify-content: flex-start;
     }
 
-    /* Жесткие размеры контейнера для предотвращения мерцания (Anti-flicker) */
+    /* Жесткие компактные размеры контейнера для предотвращения мерцания (Anti-flicker) */
     .anti-flicker-wrapper {
-      min-height: 480px;
-      min-width: 480px;
+      min-height: 420px;
+      min-width: 420px;
+      max-width: 420px;
       aspect-ratio: 1/1;
       contain: layout;
       display: flex;
@@ -31,7 +32,8 @@
       align-items: center;
       justify-content: flex-start;
       width: 100%;
-      padding: 4px;
+      padding: 0;
+      margin: 0 auto;
     }
 
     #board-container {
@@ -513,7 +515,7 @@
         $('#ply-slider').attr('max', gamePlies.length - 1);
         const initIdx = args.initial_ply !== undefined ? args.initial_ply : 0;
         goToPly(initIdx, false);
-        setFrameHeight(560);
+        setFrameHeight(500);
       } 
       // РЕЖИМ Б: Интерактивный тренажер ошибки (Drag-and-Drop)
       else {
@@ -554,7 +556,7 @@
             });
           }
         }
-        setFrameHeight(480);
+        setFrameHeight(430);
       }
     });
 

@@ -342,7 +342,7 @@ class LLMReporterService:
         patterns: List[SystemicPattern] = []
 
         # Детекция паттерна 1: Цейтнот
-        if stats.time_management.blunders_in_time_trouble_rate > 30:
+        if stats.time_management.blunders_in_time_trouble_rate > 30 and stats.phase_distribution.total_blunders > 0:
             patterns.append(
                 SystemicPattern(
                     title="Коллапс качества в цейтноте (< 15 секунд)",
@@ -356,7 +356,7 @@ class LLMReporterService:
             )
 
         # Детекция паттерна 2: Висячие фигуры / зевки тактики
-        hanging_tag = next((w for w in stats.top_tactical_weaknesses if w["tag"] == "hanging_piece"), None)
+        hanging_tag = next((w for w in stats.top_tactical_weaknesses if w["tag"] == "hanging_piece" and w.get("count", 0) > 0), None)
         if hanging_tag:
             patterns.append(
                 SystemicPattern(
@@ -370,8 +370,8 @@ class LLMReporterService:
                 )
             )
 
-        # Паттерн 3: Фазовая специфика
-        if stats.phase_distribution.middlegame_blunders >= stats.phase_distribution.opening_blunders:
+        # Паттерн 3: Фазовая специфика (только если есть реальные ошибки в миттельшпиле)
+        if stats.phase_distribution.middlegame_blunders > 0 and stats.phase_distribution.middlegame_blunders >= stats.phase_distribution.opening_blunders:
             patterns.append(
                 SystemicPattern(
                     title="Снижение концентрации в сложном миттельшпиле",
@@ -381,16 +381,6 @@ class LLMReporterService:
                     ),
                     frequency=f"{stats.phase_distribution.middlegame_blunders} ошибок за период",
                     severity="moderate",
-                )
-            )
-
-        if not patterns:
-            patterns.append(
-                SystemicPattern(
-                    title="Стабильная позиционная игра",
-                    description="Грубых системных аномалий не зафиксировано, ошибки носят стохастический характер.",
-                    frequency="Редкие эпизоды",
-                    severity="minor",
                 )
             )
 

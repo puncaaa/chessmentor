@@ -614,15 +614,18 @@ def get_theme_css(is_dark: bool) -> str:
         color: var(--text-muted) !important;
     }}
 
-    /* Жесткие размеры контейнера доски для предотвращения схлопывания и мерцания (Anti-flicker) */
+    /* Жесткие компактные размеры контейнера доски (Anti-flicker & 13-14" laptop fit) */
     .chessboard-wrapper,
     div[data-testid="stCustomComponentV1"],
     iframe[title*="interactive_chessboard"] {{
-        min-height: 480px !important;
-        min-width: 480px !important;
+        min-height: 420px !important;
+        min-width: 420px !important;
+        max-width: 420px !important;
         aspect-ratio: 1/1 !important;
         contain: layout !important;
         border: none !important;
+        margin: 0 auto !important;
+        display: block !important;
     }}
 </style>
 """
@@ -812,6 +815,16 @@ with st.sidebar:
     if st.session_state.get("sync_error"):
         st.error(f"❌ {st.session_state['sync_error']}")
 
+# Динамическая привязка и синхронизация имени ученика из сайдбара
+student_display_name = student_name.strip() if student_name.strip() else st.session_state.get('student_name', 'Ученик')
+st.session_state['student_name'] = student_display_name
+
+# Сброс кэша отчетов при смене имени
+if st.session_state.get("last_synced_student_name") != student_display_name:
+    st.session_state["last_synced_student_name"] = student_display_name
+    st.session_state.pop("cached_coach_report", None)
+    st.session_state.pop("cached_parent_report", None)
+
 # Автоматическое переключение ученика при смене платформы/никнейма
 platform_key = f"{platform}_{username}"
 if st.session_state.get("current_platform_key") != platform_key:
@@ -830,7 +843,14 @@ if st.session_state.get("current_platform_key") != platform_key:
             st.session_state["student_id"] = acc.student_profile_id
             st_prof = session.get(StudentProfile, acc.student_profile_id)
             if st_prof:
-                st.session_state["student_name"] = f"{st_prof.first_name} {st_prof.last_name}"
+                if student_name.strip():
+                    parts = student_name.strip().split(" ", 1)
+                    st_prof.first_name = parts[0]
+                    st_prof.last_name = parts[1] if len(parts) > 1 else ""
+                    session.commit()
+                    st.session_state["student_name"] = student_name.strip()
+                else:
+                    st.session_state["student_name"] = f"{st_prof.first_name} {st_prof.last_name}".strip()
 
 # Обработка синхронизации
 if sync_btn:
@@ -895,7 +915,7 @@ if not current_student_id:
         if first_student:
             current_student_id = first_student.id
             st.session_state["student_id"] = current_student_id
-            st.session_state["student_name"] = f"{first_student.first_name} {first_student.last_name}"
+            st.session_state["student_name"] = student_name.strip() if student_name.strip() else f"{first_student.first_name} {first_student.last_name}".strip()
 
 # Загрузка партий ученика и ошибок
 games_list: List[Game] = []
@@ -1443,14 +1463,15 @@ with tab_analytics:
                 elif e.phase == "endgame":
                     phase_counts["Эндшпиль"] += 1
 
-            # Построение Plotly столбчатого графика с скругленными краями
+            # Построение Plotly столбчатого графика с скругленными краями и фиксированной шириной
             fig_phases = go.Figure(go.Bar(
                 x=list(phase_counts.keys()),
                 y=list(phase_counts.values()),
+                width=0.35,
                 marker=dict(
                     color='#3B82F6',
                     cornerradius=8,
-                    line=dict(width=0)
+                    line=dict(color='rgba(59, 130, 246, 0.4)', width=1)
                 ),
                 text=list(phase_counts.values()),
                 textposition='outside',
@@ -1458,11 +1479,12 @@ with tab_analytics:
                 hovertemplate="<b>%{x}</b><br>Ошибок: %{y}<extra></extra>"
             ))
             fig_phases.update_layout(
+                bargap=0.5,
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 font=dict(family='Inter', color=chart_muted_color),
                 margin=dict(l=10, r=10, t=30, b=20),
-                height=280,
+                height=240,
                 xaxis=dict(
                     showgrid=False,
                     tickfont=dict(color=chart_text_color, size=13, family='Inter'),
@@ -1490,14 +1512,20 @@ with tab_analytics:
                 labels = [item[0] for item in sorted_tags]
                 values = [item[1] for item in sorted_tags]
 
+                # Ограничиваем толщину баров, чтобы 1-2 ошибки не раздувались в огромный блок
+                bar_w = [0.25] * len(labels)
+                chart_h = 180 if len(labels) <= 2 else 240
+
                 fig_tags = go.Figure(go.Bar(
                     x=values,
                     y=labels,
                     orientation='h',
+                    width=bar_w,
                     marker=dict(
-                        color=values,
-                        colorscale=[[0, '#F59E0B'], [1, '#EF4444']],
+                        color='#3B82F6' if len(labels) == 1 else values,
+                        colorscale=[[0, '#60A5FA'], [1, '#2563EB']],
                         cornerradius=6,
+                        line=dict(color='rgba(59, 130, 246, 0.4)', width=1),
                         showscale=False
                     ),
                     text=values,
@@ -1506,11 +1534,12 @@ with tab_analytics:
                     hovertemplate="Паттерн: <b>%{y}</b><br>Частота: %{x}<extra></extra>"
                 ))
                 fig_tags.update_layout(
+                    bargap=0.6,
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
                     font=dict(family='Inter', color=chart_muted_color),
                     margin=dict(l=10, r=10, t=30, b=20),
-                    height=280,
+                    height=chart_h,
                     xaxis=dict(
                         showgrid=True,
                         gridcolor=chart_grid_color,
@@ -1786,18 +1815,39 @@ with tab_ai:
                 """)
                 
                 st.markdown("#### 🚨 Хронические паттерны ошибок:")
-                for p in coach_rep.systemic_patterns:
-                    render_html(f"""
-                    <div class="alert-card-danger">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                            <span style="font-weight:700; font-size:0.98rem; color:var(--alert-danger-title);">
-                                [{p.severity.upper()}] {p.title}
-                            </span>
-                            <span class="badge-blunder">
-                                {p.frequency}
-                            </span>
+                valid_patterns = [
+                    p for p in coach_rep.systemic_patterns
+                    if not (
+                        p.frequency.strip().startswith("0 ")
+                        or "0 ошибок" in p.frequency
+                        or p.frequency.strip().startswith("0%")
+                        or p.frequency.strip() == "0"
+                    )
+                ]
+                if valid_patterns:
+                    for p in valid_patterns:
+                        render_html(f"""
+                        <div class="alert-card-danger">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <span style="font-weight:700; font-size:0.98rem; color:var(--alert-danger-title);">
+                                    [{p.severity.upper()}] {p.title}
+                                </span>
+                                <span class="badge-blunder">
+                                    {p.frequency}
+                                </span>
+                            </div>
+                            <div style="font-size:0.88rem; color:var(--alert-danger-text); line-height:1.4;">{p.description}</div>
                         </div>
-                        <div style="font-size:0.88rem; color:var(--alert-danger-text); line-height:1.4;">{p.description}</div>
+                        """)
+                else:
+                    render_html("""
+                    <div class="alert-card-success" style="margin-bottom:12px;">
+                        <div style="font-weight:700; font-size:0.98rem; color:var(--alert-success-title); margin-bottom:4px;">
+                            ✅ Хронических уязвимостей не выявлено
+                        </div>
+                        <div style="font-size:0.88rem; color:var(--alert-success-text);">
+                            Критичных паттернов ошибок не выявлено. Ученик провел период очень чисто.
+                        </div>
                     </div>
                     """)
 
@@ -1845,10 +1895,11 @@ with tab_ai:
 
                 st.divider()
                 st.markdown("#### 📋 Экспорт в мессенджер тренера")
+                patterns_export = "\n".join([f"- {p.title} ({p.frequency})" for p in valid_patterns]) if valid_patterns else "- Критичных паттернов ошибок не выявлено. Ученик провел период очень чисто."
                 coach_text = (
                     f"♟️ АУДИТ ИГРЫ: {coach_rep.student_name}\n\n"
                     f"{coach_rep.executive_summary}\n\n"
-                    f"ПАТТЕРНЫ:\n" + "\n".join([f"- {p.title} ({p.frequency})" for p in coach_rep.systemic_patterns]) + "\n\n"
+                    f"ПАТТЕРНЫ:\n{patterns_export}\n\n"
                     f"ЗАДАЧИ НА ДОМ (LICHESS):\n" + "\n".join([f"- {r['title']}: {r['url']}" for r in puzzle_recs]) + "\n\n"
                     f"ПЛАН ЗАНЯТИЙ:\n" + "\n".join([f"- {l}" for l in coach_rep.next_lessons_plan])
                 )

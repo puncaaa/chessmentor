@@ -25,6 +25,7 @@ class OpeningGapInfo:
     status: str  # 'Надежно' | 'Требует разбора' | 'Критическая дыра'
     status_color: str  # 'green' | 'amber' | 'red'
     coach_tip: str
+    is_hole: bool = False
     sample_game_ids: List[str] = field(default_factory=list)
 
 
@@ -189,31 +190,50 @@ class OpeningAnalyzerService:
             total_early_blunders = sum(r["early_blunders"] for r in records)
             sample_ids = [r["game_id"] for r in records]
 
-            # Классификация надежности / дыры согласно требованиям
+            # Классификация надежности / дыры согласно требованиям:
+            # Уязвимостью (дырой) считаются ТОЛЬКО варианты, где сыграно >= 2 партий
+            # И (винрейт < 45% ИЛИ дебютный ACPL > 35).
+            # При винрейте 100% дебют ОБЯЗАТЕЛЬНО помечается зеленым бейджем "Надежно".
             color_ru = "белых" if color == "white" else "черных"
-            
-            # Критическая дыра: 2+ партии и винрейт <= 40%, либо ACPL >= 45, либо 2+ ранних зевка
-            if total >= 2 and (win_rate <= 40.0 or avg_cpl >= 45 or total_early_blunders >= 2):
-                status = "Критическая дыра"
-                status_color = "red"
-                coach_tip = (
-                    f"⚠️ Критическая дыра: {name} за {color_ru} ({eco}) — {total} партий, винрейт {win_rate}%. "
-                    f"Дебютный ACPL {avg_cpl}, ранних зевков: {total_early_blunders}. "
-                    f"Рекомендуется разбор базовых планов и пешечных структур."
-                )
-            elif (total >= 2 and win_rate < 50.0) or avg_cpl >= 38 or total_early_errors >= 2 or (total == 1 and win_rate == 0.0):
-                status = "Требует разбора"
-                status_color = "amber"
-                coach_tip = (
-                    f"🔍 Требует разбора: {name} за {color_ru} ({eco}) — {total} партий, винрейт {win_rate}%, "
-                    f"дебютный ACPL {avg_cpl}. Зафиксировано ранних ошибок: {total_early_errors}."
-                )
+
+            if win_rate >= 100.0 or total < 2:
+                is_hole = False
+                status = "Надежно"
+                status_color = "green"
+                if win_rate >= 100.0:
+                    coach_tip = (
+                        f"✅ Надежно: 100% побед в {name} за {color_ru} ({eco}) — "
+                        f"дебютный ACPL {avg_cpl}, стабильное разыгрывание, надежный выбор."
+                    )
+                else:
+                    coach_tip = (
+                        f"✅ Надежно: {name} за {color_ru} ({eco}) — сыграна 1 партия (винрейт {win_rate}%), "
+                        f"дебютный ACPL {avg_cpl}. Недостаточно партий для фиксации уязвимости."
+                    )
+            elif total >= 2 and (win_rate < 45.0 or avg_cpl > 35):
+                is_hole = True
+                if win_rate <= 30.0 or avg_cpl >= 45 or total_early_blunders >= 2:
+                    status = "Критическая дыра"
+                    status_color = "red"
+                    coach_tip = (
+                        f"⚠️ Критическая дыра: {name} за {color_ru} ({eco}) — {total} партий, винрейт {win_rate}%. "
+                        f"Дебютный ACPL {avg_cpl}, ранних зевков: {total_early_blunders}. "
+                        f"Рекомендуется разбор базовых планов и пешечных структур."
+                    )
+                else:
+                    status = "Требует разбора"
+                    status_color = "amber"
+                    coach_tip = (
+                        f"🔍 Требует разбора: {name} за {color_ru} ({eco}) — {total} партий, винрейт {win_rate}%, "
+                        f"дебютный ACPL {avg_cpl}. Зафиксировано ранних ошибок: {total_early_errors}."
+                    )
             else:
+                is_hole = False
                 status = "Надежно"
                 status_color = "green"
                 coach_tip = (
                     f"✅ Надежно: {name} за {color_ru} ({eco}) — {total} партий, винрейт {win_rate}%, "
-                    f"точность в дебюте {avg_acc}%, стабильное разыгрывание."
+                    f"дебютный ACPL {avg_cpl}, точность в дебюте {avg_acc}%, стабильное разыгрывание."
                 )
 
             gap_info = OpeningGapInfo(
@@ -232,6 +252,7 @@ class OpeningAnalyzerService:
                 status=status,
                 status_color=status_color,
                 coach_tip=coach_tip,
+                is_hole=is_hole,
                 sample_game_ids=sample_ids
             )
 
@@ -245,10 +266,10 @@ class OpeningAnalyzerService:
         black_list.sort(key=lambda x: (x.games_count, -x.win_rate), reverse=True)
 
         all_openings = white_list + black_list
-        holes = [o for o in all_openings if o.status in ("Критическая дыра", "Требует разбора")]
+        holes = [o for o in all_openings if o.is_hole]
         holes.sort(key=lambda x: (x.status == "Критическая дыра", x.games_count, -x.opening_acpl), reverse=True)
 
-        strengths = [o for o in all_openings if o.status == "Надежно"]
+        strengths = [o for o in all_openings if not o.is_hole]
         strengths.sort(key=lambda x: (x.games_count, x.win_rate), reverse=True)
 
         # Сводный инсайт для тренера
