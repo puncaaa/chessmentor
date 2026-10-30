@@ -18,23 +18,120 @@ from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
-def generate_uuid():
+def generate_uuid() -> str:
     return str(uuid.uuid4())
 
+
+class School(Base):
+    """
+    Шахматная школа / организация (мультитенантность B2B).
+    """
+    __tablename__ = "schools"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    subscription_tier = Column(String(50), default="pro", nullable=False)  # starter, pro, enterprise
+    max_students = Column(Integer, default=50, nullable=False)
+    logo_url = Column(Text, nullable=True)  # URL, Base64 или локальный путь для брендинга PDF
+    contact_email = Column(String(255), nullable=True)
+    contact_phone = Column(String(50), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    teachers = relationship("Teacher", back_populates="school", cascade="all, delete-orphan")
+    groups = relationship("Group", back_populates="school", cascade="all, delete-orphan")
+    students = relationship("StudentProfile", back_populates="school", cascade="all, delete-orphan")
+    reports = relationship("StudentReport", back_populates="school", cascade="all, delete-orphan")
+
+
+class Teacher(Base):
+    """
+    Тренер / преподаватель шахматной школы.
+    """
+    __tablename__ = "teachers"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    school_id = Column(String(36), ForeignKey("schools.id", ondelete="CASCADE"), nullable=False, index=True)
+    first_name = Column(String(100), nullable=False)
+    last_name = Column(String(100), nullable=False)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    fide_title = Column(String(30), nullable=True)  # GM, IM, FM, КМС, Тренер высшей категории
+    avatar_url = Column(Text, nullable=True)
+    bio = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    school = relationship("School", back_populates="teachers")
+    groups = relationship("Group", back_populates="teacher")
+    reports = relationship("StudentReport", back_populates="teacher")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
+
+
+class Group(Base):
+    """
+    Учебная группа в шахматной школе.
+    """
+    __tablename__ = "groups"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    school_id = Column(String(36), ForeignKey("schools.id", ondelete="CASCADE"), nullable=False, index=True)
+    teacher_id = Column(String(36), ForeignKey("teachers.id", ondelete="SET NULL"), nullable=True, index=True)
+    name = Column(String(100), nullable=False)  # "Младшая группа 2017 г.р.", "Разрядники 1400-1600"
+    level = Column(String(50), nullable=False, default="Начинающие")
+    schedule = Column(String(255), nullable=True)  # "Вт, Чт 16:00 - 17:30"
+    notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    school = relationship("School", back_populates="groups")
+    teacher = relationship("Teacher", back_populates="groups")
+    students = relationship("StudentProfile", back_populates="group")
+
+
 class StudentProfile(Base):
+    """
+    Профиль ученика в рамках школы и группы.
+    """
     __tablename__ = "student_profiles"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
+    school_id = Column(String(36), ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True)
+    group_id = Column(String(36), ForeignKey("groups.id", ondelete="SET NULL"), nullable=True, index=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
+    birth_date = Column(DateTime, nullable=True)
+    current_rating = Column(Integer, default=1200, nullable=True)
+    parent_name = Column(String(100), nullable=True)
+    parent_phone = Column(String(50), nullable=True)
+    parent_telegram = Column(String(100), nullable=True)
     notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    school = relationship("School", back_populates="students")
+    group = relationship("Group", back_populates="students")
     chess_accounts = relationship("StudentChessAccount", back_populates="student", cascade="all, delete-orphan")
     games = relationship("Game", back_populates="student", cascade="all, delete-orphan")
+    reports = relationship("StudentReport", back_populates="student", cascade="all, delete-orphan")
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}".strip()
 
 
 class StudentChessAccount(Base):
+    """
+    Игровой шахматный аккаунт ученика (Lichess или Chess.com).
+    """
     __tablename__ = "student_chess_accounts"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
@@ -50,6 +147,9 @@ class StudentChessAccount(Base):
 
 
 class Game(Base):
+    """
+    Сыгранная партия и метаданные стокфиш-анализа.
+    """
     __tablename__ = "games"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
@@ -98,6 +198,9 @@ class Game(Base):
 
 
 class ChessErrorEvent(Base):
+    """
+    Конкретная ошибка или неточность в ходе партии.
+    """
     __tablename__ = "chess_error_events"
 
     id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
@@ -130,3 +233,33 @@ class ChessErrorEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     game = relationship("Game", back_populates="error_events")
+
+
+class StudentReport(Base):
+    """
+    Сгенерированные аналитические и учебные отчеты (Coach / Parent / Worksheet).
+    """
+    __tablename__ = "student_reports"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    student_profile_id = Column(String(36), ForeignKey("student_profiles.id", ondelete="CASCADE"), nullable=False, index=True)
+    school_id = Column(String(36), ForeignKey("schools.id", ondelete="CASCADE"), nullable=True, index=True)
+    teacher_id = Column(String(36), ForeignKey("teachers.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    report_type = Column(String(50), nullable=False)  # 'coach_technical', 'parent_weekly', 'worksheet_a4'
+    title = Column(String(255), nullable=False)
+    period_start = Column(DateTime, nullable=True)
+    period_end = Column(DateTime, nullable=True)
+    games_analyzed_count = Column(Integer, default=0)
+    
+    executive_summary = Column(Text, nullable=True)
+    content_json = Column(JSON, nullable=True)
+    pdf_path = Column(Text, nullable=True)
+    
+    is_sent_to_parent = Column(Boolean, default=False)
+    sent_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    student = relationship("StudentProfile", back_populates="reports")
+    school = relationship("School", back_populates="reports")
+    teacher = relationship("Teacher", back_populates="reports")

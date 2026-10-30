@@ -14,6 +14,18 @@ from .reports import (
     CoachReport,
     ParentReport,
 )
+from .school import (
+    SchoolCreate,
+    SchoolRead,
+    TeacherCreate,
+    TeacherRead,
+    GroupCreate,
+    GroupRead,
+    GroupWithStats,
+    StudentCreate,
+    StudentRead,
+    StudentCockpitCard,
+)
 
 __all__ = [
     "GamePhase",
@@ -28,4 +40,15 @@ __all__ = [
     "AggregatedStudentStats",
     "CoachReport",
     "ParentReport",
+    "SchoolCreate",
+    "SchoolRead",
+    "TeacherCreate",
+    "TeacherRead",
+    "GroupCreate",
+    "GroupRead",
+    "GroupWithStats",
+    "StudentCreate",
+    "StudentRead",
+    "StudentCockpitCard",
 ]
+

@@ -29,8 +29,31 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 
 def init_db():
-    """Создание всех таблиц в базе данных."""
+    """Создание всех таблиц в базе данных и автоматическая миграция схемы для SQLite."""
     Base.metadata.create_all(bind=engine)
+    
+    # Для SQLite проверяем и добавляем новые колонки student_profiles, если они еще не созданы
+    if "sqlite" in sync_db_url:
+        with engine.connect() as conn:
+            cursor = conn.connection.cursor()
+            cursor.execute("PRAGMA table_info(student_profiles)")
+            existing_cols = {col[1] for col in cursor.fetchall()}
+            
+            new_columns = [
+                ("school_id", "VARCHAR(36)"),
+                ("group_id", "VARCHAR(36)"),
+                ("birth_date", "DATETIME"),
+                ("current_rating", "INTEGER DEFAULT 1200"),
+                ("parent_name", "VARCHAR(100)"),
+                ("parent_phone", "VARCHAR(50)"),
+                ("parent_telegram", "VARCHAR(100)"),
+                ("is_active", "BOOLEAN DEFAULT 1"),
+                ("updated_at", "DATETIME"),
+            ]
+            for col_name, col_type in new_columns:
+                if col_name not in existing_cols:
+                    cursor.execute(f"ALTER TABLE student_profiles ADD COLUMN {col_name} {col_type}")
+            conn.connection.commit()
 
 @contextmanager
 def get_db_session() -> Session:
