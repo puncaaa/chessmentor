@@ -13,6 +13,7 @@ import chess.svg
 import chess.pgn
 import plotly.graph_objects as go
 from sqlalchemy import select, and_
+from sqlalchemy.orm import Session
 
 # Добавляем корневую директорию проекта в sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -44,6 +45,7 @@ from app.schemas.school import (
     TeacherUpdate,
     GroupCreate,
     GroupUpdate,
+    StudentCockpitCard,
 )
 from app.services.school_service import SchoolService
 from app.services.chess_sync import ChessSyncService
@@ -59,7 +61,7 @@ from app.ui.components.chessboard_component import render_interactive_chessboard
 # КОНФИГУРАЦИЯ СТРАНИЦЫ
 # ============================================================================
 st.set_page_config(
-    page_title="ChessCoach AI — Teacher Cockpit (B2B SaaS)",
+    page_title="ChessCoach AI — Экосистема развития учеников",
     page_icon="♟️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -74,34 +76,34 @@ theme_choice = st.session_state.get("app_theme_choice", "🌙 Темная")
 is_dark = "Светлая" not in theme_choice
 
 def get_theme_css(is_dark: bool) -> str:
-    """Генерация дизайн-системы Linear / Tailwind Slate."""
+    """Генерация дизайн-системы Linear / Tailwind Slate с безупречной контрастностью."""
     if is_dark:
         vars_css = """
         --bg-page: #0B0F17;
         --bg-sidebar: #0D131F;
         --bg-card: #161F30;
-        --bg-card-subtle: rgba(255, 255, 255, 0.03);
+        --bg-card-subtle: rgba(255, 255, 255, 0.04);
         --border-card: rgba(255, 255, 255, 0.08);
-        --border-card-hover: rgba(255, 255, 255, 0.16);
+        --border-card-hover: rgba(255, 255, 255, 0.18);
         --border-subtle: rgba(255, 255, 255, 0.06);
         --border-divider: rgba(255, 255, 255, 0.08);
-        --text-main: #F3F4F6;
-        --text-muted: #9CA3AF;
-        --text-subtle: #6B7280;
+        --text-main: #F8FAFC;
+        --text-muted: #94A3B8;
+        --text-subtle: #64748B;
         --code-bg: #0F172A;
-        --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
-        --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.4);
-        --alert-danger-bg: rgba(239, 68, 68, 0.06);
-        --alert-danger-border: rgba(239, 68, 68, 0.25);
-        --alert-danger-text: #F3F4F6;
+        --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+        --shadow-card-hover: 0 8px 30px rgba(0, 0, 0, 0.5);
+        --alert-danger-bg: rgba(239, 68, 68, 0.08);
+        --alert-danger-border: rgba(239, 68, 68, 0.3);
+        --alert-danger-text: #F8FAFC;
         --alert-danger-title: #F87171;
-        --alert-info-bg: rgba(59, 130, 246, 0.06);
-        --alert-info-border: rgba(59, 130, 246, 0.25);
-        --alert-info-text: #F3F4F6;
+        --alert-info-bg: rgba(59, 130, 246, 0.08);
+        --alert-info-border: rgba(59, 130, 246, 0.3);
+        --alert-info-text: #F8FAFC;
         --alert-info-title: #60A5FA;
-        --alert-success-bg: rgba(16, 185, 129, 0.06);
-        --alert-success-border: rgba(16, 185, 129, 0.25);
-        --alert-success-text: #F3F4F6;
+        --alert-success-bg: rgba(16, 185, 129, 0.08);
+        --alert-success-border: rgba(16, 185, 129, 0.3);
+        --alert-success-text: #F8FAFC;
         --alert-success-title: #34D399;
         --badge-blunder-bg: rgba(239, 68, 68, 0.15);
         --badge-blunder-text: #FCA5A5;
@@ -126,8 +128,8 @@ def get_theme_css(is_dark: bool) -> str:
         --text-muted: #475569;
         --text-subtle: #64748B;
         --code-bg: #F1F5F9;
-        --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.05);
-        --shadow-card-hover: 0 6px 20px rgba(0, 0, 0, 0.08);
+        --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.1);
         --alert-danger-bg: #FEF2F2;
         --alert-danger-border: #FECACA;
         --alert-danger-text: #991B1B;
@@ -152,7 +154,7 @@ def get_theme_css(is_dark: bool) -> str:
 
     return f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
     :root {{
         {vars_css}
@@ -164,66 +166,69 @@ def get_theme_css(is_dark: bool) -> str:
         color: var(--text-main) !important;
     }}
 
+    h1, h2, h3, h4, h5, h6 {{
+        color: var(--text-main) !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 700 !important;
+    }}
+
+    p, span, label, [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] span {{
+        color: var(--text-main);
+    }}
+
+    .stCaption, [data-testid="stCaptionContainer"] {{
+        color: var(--text-muted) !important;
+    }}
+
     section[data-testid="stSidebar"] {{
         background-color: var(--bg-sidebar) !important;
         border-right: 1px solid var(--border-divider) !important;
     }}
 
-    /* Карточки KPI и дашборда */
+    section[data-testid="stSidebar"] * {{
+        color: var(--text-main);
+    }}
+
+    /* Карточки B2B SaaS */
     .saas-card {{
-        background: var(--bg-card);
-        border: 1px solid var(--border-card);
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: var(--shadow-card);
-        transition: all 0.2s ease;
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 12px !important;
+        padding: 16px !important;
+        box-shadow: var(--shadow-card) !important;
+        transition: all 0.2s ease !important;
+        color: var(--text-main) !important;
     }}
     .saas-card:hover {{
-        border-color: var(--border-card-hover);
-        box-shadow: var(--shadow-card-hover);
+        border-color: var(--border-card-hover) !important;
+        box-shadow: var(--shadow-card-hover) !important;
     }}
 
     .kpi-card {{
-        background: var(--bg-card);
-        border: 1px solid var(--border-card);
-        border-radius: 10px;
-        padding: 14px 18px;
-        box-shadow: var(--shadow-card);
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 10px !important;
+        padding: 14px 18px !important;
+        box-shadow: var(--shadow-card) !important;
     }}
     .kpi-label {{
-        color: var(--text-muted);
+        color: var(--text-muted) !important;
         font-size: 0.78rem;
-        font-weight: 500;
+        font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }}
     .kpi-value {{
-        color: var(--text-main);
+        color: var(--text-main) !important;
         font-size: 1.55rem;
-        font-weight: 700;
+        font-weight: 800;
         margin-top: 4px;
         letter-spacing: -0.02em;
     }}
     .kpi-subtext {{
-        color: var(--text-subtle);
+        color: var(--text-subtle) !important;
         font-size: 0.78rem;
         margin-top: 3px;
-    }}
-
-    /* Ученик в списке (CRM Card) */
-    .student-row-card {{
-        background: var(--bg-card);
-        border: 1px solid var(--border-card);
-        border-radius: 12px;
-        padding: 14px 18px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        transition: border-color 0.15s ease;
-    }}
-    .student-row-card:hover {{
-        border-color: var(--border-card-hover);
     }}
 
     /* Бейджи */
@@ -239,7 +244,96 @@ def get_theme_css(is_dark: bool) -> str:
     .badge-mistake {{ background: var(--badge-mistake-bg); color: var(--badge-mistake-text); }}
     .badge-win {{ background: var(--badge-win-bg); color: var(--badge-win-text); }}
     .badge-inaccuracy {{ background: var(--badge-inacc-bg); color: var(--badge-inacc-text); }}
-    .badge-plan {{ background: rgba(59, 130, 246, 0.15); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.3); }}
+    .badge-plan {{ background: rgba(59, 130, 246, 0.12); color: #2563EB; border: 1px solid rgba(59, 130, 246, 0.25); }}
+
+    /* Кнопки WhatsApp */
+    .stLinkButton a {{
+        background: #10B981 !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25) !important;
+        transition: all 0.15s ease !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }}
+    .stLinkButton a:hover {{
+        background: #059669 !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35) !important;
+    }}
+
+    /* Primary buttons */
+    button[kind="primary"] {{
+        background: #2563EB !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25) !important;
+    }}
+    button[kind="primary"]:hover {{
+        background: #1D4ED8 !important;
+    }}
+
+    /* Secondary buttons */
+    button[kind="secondary"] {{
+        background: var(--bg-card-subtle) !important;
+        color: var(--text-main) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        transition: all 0.15s ease !important;
+    }}
+    button[kind="secondary"]:hover {{
+        background: var(--border-card) !important;
+        color: var(--text-main) !important;
+        border-color: var(--border-card-hover) !important;
+    }}
+
+    /* Inputs, Selects and Popovers */
+    div[data-baseweb="input"] {{
+        background-color: var(--bg-card) !important;
+        border-color: var(--border-card) !important;
+    }}
+    input, textarea {{
+        color: var(--text-main) !important;
+        background-color: transparent !important;
+    }}
+    div[data-baseweb="select"] > div {{
+        background-color: var(--bg-card) !important;
+        border-color: var(--border-card) !important;
+        color: var(--text-main) !important;
+    }}
+
+    /* Карточки учеников в сетке 2x2 */
+    .student-card {{
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 14px !important;
+        padding: 16px 18px !important;
+        box-shadow: var(--shadow-card) !important;
+        transition: all 0.2s ease !important;
+        margin-bottom: 12px !important;
+    }}
+    .student-card:hover {{
+        border-color: var(--border-card-hover) !important;
+        box-shadow: var(--shadow-card-hover) !important;
+    }}
+
+    /* Expander styling */
+    div[data-testid="stExpander"] {{
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border-card) !important;
+        border-radius: 10px !important;
+    }}
+    div[data-testid="stExpander"] summary {{
+        color: var(--text-main) !important;
+        font-weight: 600 !important;
+    }}
 
     /* Alert cards */
     .alert-card-danger {{
@@ -264,25 +358,7 @@ def get_theme_css(is_dark: bool) -> str:
         margin-bottom: 8px;
     }}
 
-    /* Кнопки WhatsApp */
-    .btn-whatsapp {{
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        background: #10B981;
-        color: white !important;
-        text-decoration: none !important;
-        font-size: 0.82rem;
-        font-weight: 600;
-        padding: 6px 12px;
-        border-radius: 6px;
-        transition: background 0.15s ease;
-    }}
-    .btn-whatsapp:hover {{
-        background: #059669;
-    }}
-
-    /* Компактный контейнер шахматной доски 420px */
+    /* Шахматная доска */
     .chessboard-wrapper,
     div[data-testid="stCustomComponentV1"],
     iframe[title*="interactive_chessboard"] {{
@@ -304,6 +380,121 @@ def get_theme_css(is_dark: bool) -> str:
     </style>
     """
 
+
+def get_student_gamification(card: StudentCockpitCard, session: Session) -> dict:
+    """Расчет мягкой шахматной геймификации: звания, ранги, форма, стрик активности."""
+    rating = card.rating or 1200
+
+    # 1. Шахматные звания / Уровни ученика
+    if rating < 1100:
+        rank = {
+            "title": "Пешечный страж",
+            "icon": "🛡️",
+            "tier": "Новичок",
+            "color": "#10B981",
+            "bg": "rgba(16, 185, 129, 0.12)",
+            "min_xp": 900,
+            "next_xp": 1100,
+        }
+    elif rating < 1300:
+        rank = {
+            "title": "Тактический всадник",
+            "icon": "♞",
+            "tier": "Любитель",
+            "color": "#3B82F6",
+            "bg": "rgba(59, 130, 246, 0.12)",
+            "min_xp": 1100,
+            "next_xp": 1300,
+        }
+    elif rating < 1600:
+        rank = {
+            "title": "Мастер комбинаций",
+            "icon": "🎯",
+            "tier": "Разрядник",
+            "color": "#8B5CF6",
+            "bg": "rgba(139, 92, 246, 0.12)",
+            "min_xp": 1300,
+            "next_xp": 1600,
+        }
+    else:
+        rank = {
+            "title": "Гроссмейстер клуба",
+            "icon": "👑",
+            "tier": "Сборник",
+            "color": "#F59E0B",
+            "bg": "rgba(245, 158, 11, 0.12)",
+            "min_xp": 1600,
+            "next_xp": 2000,
+        }
+
+    # 2. Прогресс-бар XP до следующего звания (до преодоления круглой отметки)
+    next_xp = ((rating // 100) + 1) * 100
+    prev_xp = (rating // 100) * 100
+    current_offset = max(0, rating - prev_xp)
+    progress_pct = max(10, min(100, int((current_offset / 100) * 100)))
+
+    # 3. Индикатор формы за 5 последних партий
+    last_games = session.execute(
+        select(Game.result, Game.student_color)
+        .where(Game.student_profile_id == card.id)
+        .order_by(Game.played_at.desc())
+        .limit(5)
+    ).all()
+
+    form_emojis = []
+    for g_res, s_col in reversed(last_games):
+        if (g_res == "1-0" and s_col == "white") or (g_res == "0-1" and s_col == "black"):
+            form_emojis.append("🟢")
+        elif g_res in ("1/2-1/2", "0.5-0.5", "1/2"):
+            form_emojis.append("⚪")
+        else:
+            form_emojis.append("🔴")
+
+    while len(form_emojis) < 5:
+        form_emojis.insert(0, "⚪")
+
+    form_display = " ".join(form_emojis)
+
+    # 4. Стрик активности (Practice Streak)
+    if card.games_this_week >= 5:
+        streak_text = f"🔥 {card.games_this_week} партий на неделе"
+    elif card.games_this_week >= 2:
+        streak_text = f"🔥 {card.games_this_week} дня в игре"
+    elif card.games_this_week == 1:
+        streak_text = "🔥 1 партия на неделе"
+    else:
+        streak_text = "💤 Ждет новой игры"
+
+    # 5. Главная суперсила
+    if card.avg_caps_accuracy >= 80:
+        superpower = "Высокая точность"
+    elif rating >= 1500:
+        superpower = "Сильный эндшпиль"
+    elif card.avg_acpl > 0 and card.avg_acpl <= 35:
+        superpower = "Точный расчет"
+    else:
+        superpower = "Стабильный дебют"
+
+    # 6. Зона фокуса
+    weakness_map = {
+        "time_trouble_panic": "Цейтнот",
+        "hanging_piece": "Висячие фигуры",
+        "missed_fork": "Вилки конем",
+        "missed_pin": "Связки",
+        "endgame_king_activity": "Король в эндшпиле",
+    }
+    focus_area = weakness_map.get(card.top_weakness_tag, "Висячие фигуры")
+
+    return {
+        "rank": rank,
+        "next_xp": next_xp,
+        "progress_pct": progress_pct,
+        "form_display": form_display,
+        "streak_text": streak_text,
+        "superpower": superpower,
+        "focus_area": focus_area,
+    }
+
 st.markdown(get_theme_css(is_dark), unsafe_allow_html=True)
 init_db()
 
@@ -313,12 +504,20 @@ init_db()
 with get_db_session() as session:
     school = SchoolService.get_or_create_default_school(session)
     teachers = SchoolService.list_teachers(session, school.id)
+    if not teachers:
+        from scripts.seed_school import seed_database
+        seed_database()
+        school = SchoolService.get_or_create_default_school(session)
+        teachers = SchoolService.list_teachers(session, school.id)
 
-# Селектор тренера
-if teachers:
-    coach_options = {f"{t.full_name} ({t.fide_title or 'Тренер'})": t.id for t in teachers}
-else:
+# Селектор тренера: Александр Морозевич всегда первый по умолчанию
+teachers_sorted = sorted(teachers, key=lambda t: 0 if "Морозевич" in t.last_name else 1)
+coach_options = {f"{t.full_name} ({t.fide_title or 'Тренер'})": t.id for t in teachers_sorted}
+if not coach_options:
     coach_options = {"(Тренеры не назначены)": None}
+
+if "active_coach_select" in st.session_state and st.session_state["active_coach_select"] not in coach_options:
+    del st.session_state["active_coach_select"]
 default_coach_name = list(coach_options.keys())[0]
 
 # ============================================================================
@@ -326,24 +525,28 @@ default_coach_name = list(coach_options.keys())[0]
 # ============================================================================
 with st.sidebar:
     render_html(f"""
-    <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid var(--border-divider);">
-        <img src="{school.logo_url or 'https://img.icons8.com/color/96/chess-knight.png'}" style="width:40px; height:40px; object-fit:contain;" />
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border-divider);">
+        <div style="width:40px; height:40px; border-radius:10px; background:linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(59, 130, 246, 0.35); flex-shrink:0;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="#FFFFFF">
+                <path d="M19 22H5v-2h14v2M18.8 9.2c-.3-.8-.9-1.5-1.7-1.9-.3-.2-.7-.3-1.1-.3h-.1c-.4-1.2-1.3-2.1-2.4-2.6-.7-.3-1.5-.4-2.2-.2-.2-.6-.6-1.1-1.1-1.5-.7-.5-1.6-.7-2.5-.5-.8.2-1.5.7-1.9 1.4-.4.7-.4 1.5-.2 2.3l.5 1.8c-.8.4-1.4 1-1.8 1.8-.4.8-.4 1.7-.1 2.5l1.6 4.3H19l-.2-7.1z"/>
+            </svg>
+        </div>
         <div>
             <div style="font-size:1.05rem; font-weight:700; color:var(--text-main); line-height:1.2;">{school.name}</div>
-            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">B2B Academy Cockpit</div>
+            <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">Экосистема развития учеников</div>
         </div>
     </div>
     """)
 
     selected_coach_label = st.selectbox(
-        "👔 Текущий тренер:",
+        "👔 Тренер:",
         options=list(coach_options.keys()),
         index=0,
         key="active_coach_select"
     )
     current_teacher_id = coach_options.get(selected_coach_label)
 
-    with st.expander("⚙️ Управление тренерами", expanded=(not teachers)):
+    with st.expander("⚙️ Управление тренерами", expanded=False):
         coach_subaction = st.radio("Действие:", ["✏️ Изменить", "➕ Добавить", "🗑️ Удалить"], horizontal=True, key="coach_mgm_radio")
         with get_db_session() as session:
             active_teacher_obj = session.get(Teacher, current_teacher_id) if current_teacher_id else None
@@ -428,18 +631,17 @@ with st.sidebar:
     )
 
     st.divider()
-    render_html(f"""
-    <div class="saas-card" style="padding:12px; font-size:0.8rem;">
-        <div style="font-weight:600; color:var(--text-main); margin-bottom:6px;">🏫 Параметры школы</div>
-        <div style="color:var(--text-muted);">Тариф: <span class="badge-chip badge-plan">{school.subscription_tier.upper()}</span></div>
-        <div style="color:var(--text-muted); margin-top:4px;">Лимит мест: <b>{school.max_students} учеников</b></div>
-        <div style="color:var(--text-muted); margin-top:4px;">Движок: <span style="color:#10B981; font-weight:600;">Stockfish 19 AI</span></div>
-        <div style="color:var(--text-muted); margin-top:4px;">Синхронизация: <span style="color:#3B82F6; font-weight:600;">Lichess & Chess.com</span></div>
-    </div>
-    """)
 
-    with st.expander("🛠️ База данных / Демо", expanded=False):
-        st.caption("Если потребуется заново наполнить базу исходными демонстрационными данными:")
+    with st.expander("⚙️ Настройки школы", expanded=False):
+        render_html(f"""
+        <div style="font-size:0.8rem; color:var(--text-muted); line-height:1.7;">
+            <div>Тариф: <b style="color:var(--text-main);">{school.subscription_tier.upper()}</b></div>
+            <div>Лимит мест: <b style="color:var(--text-main);">{school.max_students} учеников</b></div>
+            <div>Интеграция: <span style="color:#3B82F6; font-weight:600;">Lichess & Chess.com</span></div>
+        </div>
+        """)
+        st.divider()
+        st.caption("Если потребуется заново наполнить базу демо-учениками:")
         confirm_seed = st.checkbox("Подтверждаю сброс демо-данных", key="chk_reset_demo")
         if st.button("🔄 Восстановить демо-данные", disabled=not confirm_seed, use_container_width=True, key="btn_reset_demo"):
             from scripts.seed_school import seed_database
@@ -453,21 +655,23 @@ with st.sidebar:
 # ============================================================================
 coach_display_name = selected_coach_label if current_teacher_id else "Не назначен"
 render_html(f"""
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border-divider);">
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--border-divider);">
     <div style="display:flex; align-items:center; gap:12px;">
-        <span style="font-size:2.0rem;">♟️</span>
+        <span style="font-size:1.8rem;">♟️</span>
         <div>
-            <div style="font-size:1.45rem; font-weight:800; color:var(--text-main); letter-spacing:-0.02em;">
+            <div style="font-size:1.4rem; font-weight:800; color:var(--text-main); letter-spacing:-0.02em;">
                 {school.name}
             </div>
             <div style="font-size:0.85rem; color:var(--text-muted); margin-top:2px;">
-                Кабинет тренера: <span style="color:#3B82F6; font-weight:600;">{coach_display_name}</span> • Лицензия активна
+                Кабинет тренера: <span style="color:#3B82F6; font-weight:600;">{coach_display_name}</span>
             </div>
         </div>
     </div>
-    <div style="display:flex; gap:8px;">
-        <span class="badge-chip badge-win">🟢 Движок Stockfish 19 активен</span>
-        <span class="badge-chip badge-plan">⚡ Pro Plan ({school.max_students} мест)</span>
+    <div style="display:flex; align-items:center; gap:8px;">
+        <span style="display:inline-flex; align-items:center; gap:6px; font-size:0.8rem; font-weight:600; color:#10B981; background:rgba(16, 185, 129, 0.1); border:1px solid rgba(16, 185, 129, 0.25); padding:5px 12px; border-radius:20px;">
+            <span style="width:7px; height:7px; border-radius:50%; background:#10B981; display:inline-block; box-shadow:0 0 8px #10B981;"></span>
+            Система активна
+        </span>
     </div>
 </div>
 """)
@@ -551,6 +755,8 @@ if not coach_groups:
 
 # Групповой селектор для текущего тренера
 group_dict = {f"{g.name} ({g.level})": g.id for g in coach_groups}
+if "active_group_select" in st.session_state and st.session_state["active_group_select"] not in group_dict:
+    del st.session_state["active_group_select"]
 selected_group_label = st.selectbox(
     f"Учебная группа тренера ({len(coach_groups)}):",
     options=list(group_dict.keys()),
@@ -736,132 +942,163 @@ if selected_tab == "👥 Группы и ученики":
 
     st.divider()
 
-    # 3. Список учеников группы (Ростер)
-    st.markdown(f"### 📋 Ученики группы ({len(group_students)})")
+    # 3. Карточки учеников группы (Cards Grid 2x2 с геймификацией)
+    st.markdown(f"### 📋 Карточки учеников группы ({len(group_students)})")
 
     if not group_students:
         st.info("В этой группе пока нет учеников. Добавьте первого ученика через форму ниже!")
     else:
-        for student in group_students:
-            with get_db_session() as session:
-                card = SchoolService.get_student_cockpit_card(session, student.id)
+        # Сетка 2x2
+        for i in range(0, len(group_students), 2):
+            row_students = group_students[i:i+2]
+            cols = st.columns(2)
+            for col_idx, student in enumerate(row_students):
+                with cols[col_idx]:
+                    with get_db_session() as session:
+                        card = SchoolService.get_student_cockpit_card(session, student.id)
+                        gamify = get_student_gamification(card, session)
 
-            col_stud_info, col_stud_metrics, col_stud_actions = st.columns([4, 4, 3])
+                    rank = gamify["rank"]
+                    online_handle = (
+                        f"Lichess: @{card.lichess_username}"
+                        if card.lichess_username
+                        else (f"Chess.com: @{card.chesscom_username}" if card.chesscom_username else "Оффлайн")
+                    )
 
-            with col_stud_info:
-                online_handle = f"Lichess: @{card.lichess_username}" if card.lichess_username else (f"Chess.com: @{card.chesscom_username}" if card.chesscom_username else "Без аккаунта")
-                render_html(f"""
-                <div style="display:flex; align-items:center; gap:12px;">
-                    <div style="background:#3B82F6; color:white; width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:1.1rem; flex-shrink:0;">
-                        {card.full_name[0]}
+                    # Рендер карточки с геймификацией
+                    render_html(f"""
+                    <div class="student-card">
+                        <!-- Верхняя плашка: Аватар с оверлеем ранга, ФИО, Рейтинг и Титул -->
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+                            <div style="display:flex; align-items:center; gap:12px;">
+                                <div style="position:relative; width:48px; height:48px; flex-shrink:0;">
+                                    <div style="width:48px; height:48px; border-radius:50%; background:linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); display:flex; align-items:center; justify-content:center; color:#FFFFFF; font-weight:700; font-size:1.2rem; box-shadow:0 2px 8px rgba(59, 130, 246, 0.3);">
+                                        {card.full_name[0]}
+                                    </div>
+                                    <div style="position:absolute; bottom:-3px; right:-3px; background:var(--bg-card); border-radius:50%; width:20px; height:20px; display:flex; align-items:center; justify-content:center; font-size:0.75rem; box-shadow:0 1px 4px rgba(0,0,0,0.2); border:1px solid var(--border-card);" title="{rank['title']} ({rank['tier']})">
+                                        {rank['icon']}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="font-weight:700; font-size:1.02rem; color:var(--text-main); line-height:1.25;">{card.full_name}</div>
+                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-top:2px;">{online_handle}</div>
+                                </div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:1.15rem; font-weight:800; color:var(--text-main); letter-spacing:-0.02em;">
+                                    ⭐ {card.rating}
+                                </div>
+                                <div style="font-size:0.7rem; font-weight:600; color:{rank['color']}; background:{rank['bg']}; padding:2px 7px; border-radius:10px; display:inline-block; margin-top:2px;">
+                                    {rank['icon']} {rank['title']}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Прогресс-бар XP до следующего звания -->
+                        <div style="margin-bottom:12px; background:var(--bg-card-subtle); padding:8px 10px; border-radius:8px; border:1px solid var(--border-subtle);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.73rem; margin-bottom:5px;">
+                                <span style="color:var(--text-muted); font-weight:500;">Уровень: <b style="color:var(--text-main);">{rank['tier']}</b></span>
+                                <span style="color:var(--text-main); font-weight:700;">{card.rating} / {gamify['next_xp']} XP</span>
+                            </div>
+                            <div style="width:100%; height:6px; background:var(--border-card); border-radius:3px; overflow:hidden;">
+                                <div style="width:{gamify['progress_pct']}%; height:100%; background:linear-gradient(90deg, #3B82F6 0%, #8B5CF6 100%); border-radius:3px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- Форма (последние 5) и Стрик активности -->
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding:7px 0; margin-bottom:10px; border-top:1px solid var(--border-divider); border-bottom:1px solid var(--border-divider); font-size:0.78rem;">
+                            <div>
+                                <span style="color:var(--text-muted); font-size:0.7rem; display:block; margin-bottom:2px;">Форма (5 партий):</span>
+                                <span style="letter-spacing:2px; font-size:0.85rem;">{gamify['form_display']}</span>
+                            </div>
+                            <div style="text-align:right;">
+                                <span style="color:var(--text-muted); font-size:0.7rem; display:block; margin-bottom:2px;">Активность:</span>
+                                <span style="font-weight:600; color:var(--text-main);">{gamify['streak_text']}</span>
+                            </div>
+                        </div>
+
+                        <!-- Суперсила и Зона фокуса -->
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <span class="badge-chip badge-win" title="Главная сильная сторона">⚡ {gamify['superpower']}</span>
+                            <span class="badge-chip badge-blunder" title="Зона фокуса">🎯 {gamify['focus_area']}</span>
+                            <span style="margin-left:auto; font-size:0.75rem; color:var(--text-muted);">CAPS: <b style="color:#3B82F6;">{card.avg_caps_accuracy}%</b></span>
+                        </div>
                     </div>
-                    <div>
-                        <div style="font-weight:700; font-size:1.05rem; color:var(--text-main);">{card.full_name}</div>
-                        <div style="font-size:0.8rem; color:var(--text-muted);">{online_handle} • Рейтинг: <b style="color:var(--text-main);">{card.rating}</b></div>
-                    </div>
-                </div>
-                """)
+                    """)
 
-            with col_stud_metrics:
-                tag_label = "Зевки фигур"
-                if card.top_weakness_tag == "time_trouble_panic":
-                    tag_label = "Цейтнот"
-                elif card.top_weakness_tag == "missed_fork":
-                    tag_label = "Вилки конем"
-                elif card.top_weakness_tag == "missed_pin":
-                    tag_label = "Связки"
-                elif card.top_weakness_tag == "endgame_king_activity":
-                    tag_label = "Эндшпиль"
-
-                render_html(f"""
-                <div style="display:flex; gap:14px; align-items:center;">
-                    <div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">Игр за неделю</div>
-                        <div style="font-weight:700; font-size:0.95rem; color:var(--text-main);">♟️ {card.games_this_week} партий</div>
-                    </div>
-                    <div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">Точность (CAPS)</div>
-                        <div style="font-weight:700; font-size:0.95rem; color:#3B82F6;">{card.avg_caps_accuracy}%</div>
-                    </div>
-                    <div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">Слабость</div>
-                        <span class="badge-chip badge-blunder">{tag_label}</span>
-                    </div>
-                </div>
-                """)
-
-            with col_stud_actions:
-                col_btn_wa, col_btn_go = st.columns([1, 1])
-                with col_btn_wa:
-                    if card.whatsapp_link:
-                        st.link_button("💬 WhatsApp", card.whatsapp_link, use_container_width=True)
-                    else:
-                        st.button("💬 Нет тел.", disabled=True, use_container_width=True, key=f"no_tel_{card.id}")
-                with col_btn_go:
-                    if st.button("🔍 Разбор", key=f"goto_deep_{card.id}", use_container_width=True):
-                        st.session_state["selected_student_id"] = card.id
-                        st.session_state["main_nav_tab"] = "🔍 Разбор ученика"
-                        st.rerun()
-
-            with st.expander(f"⚙️ Управление профилем: {card.full_name}", expanded=False):
-                with get_db_session() as session:
-                    st_obj = session.get(StudentProfile, student.id)
-                    all_school_groups = SchoolService.list_groups(session, school.id)
-
-                if st_obj:
-                    tab_edit_st, tab_del_st = st.tabs(["✏️ Редактировать", "🗑️ Удалить"])
-                    with tab_edit_st:
-                        with st.form(f"form_edit_stud_{student.id}"):
-                            col_es1, col_es2 = st.columns(2)
-                            with col_es1:
-                                ef_name = st.text_input("Имя", value=st_obj.first_name)
-                                el_name = st.text_input("Фамилия", value=st_obj.last_name)
-                                erating = st.number_input("Рейтинг", min_value=500, max_value=2900, value=st_obj.current_rating or 1200, step=25)
-                                group_names = [g.name for g in all_school_groups]
-                                current_g_idx = 0
-                                for idx, g in enumerate(all_school_groups):
-                                    if g.id == st_obj.group_id:
-                                        current_g_idx = idx
-                                        break
-                                eg_name = st.selectbox("Учебная группа (перевод)", group_names, index=current_g_idx, key=f"sel_grp_{student.id}")
-                            with col_es2:
-                                ep_name = st.text_input("ФИО родителя", value=st_obj.parent_name or "")
-                                ep_phone = st.text_input("Телефон родителя", value=st_obj.parent_phone or "")
-                                ep_tg = st.text_input("Telegram родителя", value=st_obj.parent_telegram or "")
-                                elic = st.text_input("Lichess никнейм", value=card.lichess_username or "")
-                                ecom = st.text_input("Chess.com никнейм", value=card.chesscom_username or "")
-
-                            if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
-                                target_gid = next((g.id for g in all_school_groups if g.name == eg_name), st_obj.group_id)
-                                with get_db_session() as session:
-                                    SchoolService.update_student(session, st_obj.id, StudentUpdate(
-                                        first_name=ef_name.strip(),
-                                        last_name=el_name.strip(),
-                                        current_rating=int(erating),
-                                        group_id=target_gid,
-                                        parent_name=ep_name.strip() if ep_name else None,
-                                        parent_phone=ep_phone.strip() if ep_phone else None,
-                                        parent_telegram=ep_tg.strip() if ep_tg else None
-                                    ))
-                                    if elic.strip():
-                                        SchoolService.add_or_update_chess_account(session, st_obj.id, "lichess", elic.strip())
-                                    if ecom.strip():
-                                        SchoolService.add_or_update_chess_account(session, st_obj.id, "chesscom", ecom.strip())
-                                st.success("Данные ученика сохранены!")
-                                time.sleep(1)
-                                st.rerun()
-
-                    with tab_del_st:
-                        st.warning(f"Вы действительно хотите удалить ученика **{card.full_name}** и все связанные партии?")
-                        confirm_del_s = st.checkbox(f"Подтверждаю удаление {card.full_name}", key=f"chk_del_s_{student.id}")
-                        if st.button("🗑️ Удалить ученика", disabled=not confirm_del_s, type="primary", use_container_width=True, key=f"btn_del_s_{student.id}"):
-                            with get_db_session() as session:
-                                SchoolService.delete_student(session, student.id)
-                            st.success(f"Ученик {card.full_name} удален.")
-                            time.sleep(1)
+                    # Две аккуратные кнопки внизу карточки: "Разбор" (Primary) и "WhatsApp родителю" (Soft Green)
+                    col_b1, col_b2 = st.columns([1, 1])
+                    with col_b1:
+                        if st.button("🔍 Разбор", key=f"btn_deep_card_{card.id}", type="primary", use_container_width=True):
+                            st.session_state["selected_student_id"] = card.id
+                            st.session_state["main_nav_tab"] = "🔍 Разбор ученика"
                             st.rerun()
+                    with col_b2:
+                        if card.whatsapp_link:
+                            st.link_button("💬 WhatsApp родителю", card.whatsapp_link, use_container_width=True)
+                        else:
+                            st.button("💬 WhatsApp", disabled=True, use_container_width=True, key=f"no_tel_card_{card.id}")
 
-            st.markdown("<div style='height:4px; border-bottom:1px solid var(--border-divider); margin:8px 0 12px 0;'></div>", unsafe_allow_html=True)
+                    # Expander для редактирования/удаления
+                    with st.expander(f"⚙️ Профиль: {card.full_name}", expanded=False):
+                        with get_db_session() as session:
+                            st_obj = session.get(StudentProfile, student.id)
+                            all_school_groups = SchoolService.list_groups(session, school.id)
+
+                        if st_obj:
+                            tab_edit_st, tab_del_st = st.tabs(["✏️ Редактировать", "🗑️ Удалить"])
+                            with tab_edit_st:
+                                with st.form(f"form_edit_stud_{student.id}"):
+                                    col_es1, col_es2 = st.columns(2)
+                                    with col_es1:
+                                        ef_name = st.text_input("Имя", value=st_obj.first_name)
+                                        el_name = st.text_input("Фамилия", value=st_obj.last_name)
+                                        erating = st.number_input("Рейтинг", min_value=500, max_value=2900, value=st_obj.current_rating or 1200, step=25)
+                                        group_names = [g.name for g in all_school_groups]
+                                        current_g_idx = 0
+                                        for idx, g in enumerate(all_school_groups):
+                                            if g.id == st_obj.group_id:
+                                                current_g_idx = idx
+                                                break
+                                        eg_name = st.selectbox("Учебная группа (перевод)", group_names, index=current_g_idx, key=f"sel_grp_{student.id}")
+                                    with col_es2:
+                                        ep_name = st.text_input("ФИО родителя", value=st_obj.parent_name or "")
+                                        ep_phone = st.text_input("Телефон родителя", value=st_obj.parent_phone or "")
+                                        ep_tg = st.text_input("Telegram родителя", value=st_obj.parent_telegram or "")
+                                        elic = st.text_input("Lichess никнейм", value=card.lichess_username or "")
+                                        ecom = st.text_input("Chess.com никнейм", value=card.chesscom_username or "")
+
+                                    if st.form_submit_button("💾 Сохранить изменения", type="primary", use_container_width=True):
+                                        target_gid = next((g.id for g in all_school_groups if g.name == eg_name), st_obj.group_id)
+                                        with get_db_session() as session:
+                                            SchoolService.update_student(session, st_obj.id, StudentUpdate(
+                                                first_name=ef_name.strip(),
+                                                last_name=el_name.strip(),
+                                                current_rating=int(erating),
+                                                group_id=target_gid,
+                                                parent_name=ep_name.strip() if ep_name else None,
+                                                parent_phone=ep_phone.strip() if ep_phone else None,
+                                                parent_telegram=ep_tg.strip() if ep_tg else None
+                                            ))
+                                            if elic.strip():
+                                                SchoolService.add_or_update_chess_account(session, st_obj.id, "lichess", elic.strip())
+                                            if ecom.strip():
+                                                SchoolService.add_or_update_chess_account(session, st_obj.id, "chesscom", ecom.strip())
+                                        st.success("Данные ученика сохранены!")
+                                        time.sleep(1)
+                                        st.rerun()
+
+                            with tab_del_st:
+                                st.warning(f"Вы действительно хотите удалить ученика **{card.full_name}** и все связанные партии?")
+                                confirm_del_s = st.checkbox(f"Подтверждаю удаление {card.full_name}", key=f"chk_del_s_{student.id}")
+                                if st.button("🗑️ Удалить ученика", disabled=not confirm_del_s, type="primary", use_container_width=True, key=f"btn_del_s_{student.id}"):
+                                    with get_db_session() as session:
+                                        SchoolService.delete_student(session, student.id)
+                                    st.success(f"Ученик {card.full_name} удален.")
+                                    time.sleep(1)
+                                    st.rerun()
+
+                    st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
     # 4. Форма добавления нового ученика в группу
     with st.expander("➕ Добавить нового ученика в эту группу", expanded=False):
